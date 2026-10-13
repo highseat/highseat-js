@@ -21,6 +21,10 @@ const ALLOWED_IMPORTS: Record<string, string[]> = {
   "./react": ["react"],
 }
 
+// The subpaths whose built file must open with "use client", so a React Server Components app
+// renders them on the client.
+const CLIENT_ENTRIES = new Set(["./react"])
+
 const IMPORT_PATTERN =
   /(?:^|[;\s])(?:import|export)\s*(?:[\w*{}\s,]*?\sfrom\s*)?["']([^"']+)["']|\bimport\(\s*["']([^"']+)["']\s*\)/g
 
@@ -89,6 +93,10 @@ for (const [subpath, sourcePath] of Object.entries(manifest.exports)) {
 
   for (const specifier of collectImports(file)) {
     if (!allowed.includes(specifier)) failures.push(`${subpath}: imports "${specifier}"`)
+  }
+
+  if (CLIENT_ENTRIES.has(subpath) && !readFileSync(file, "utf8").startsWith('"use client"')) {
+    failures.push(`${subpath}: lost its "use client" directive`)
   }
 
   const error = findLoadError(file)

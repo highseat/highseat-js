@@ -24,4 +24,4 @@ jobs:
     permissions:
       contents: write
       id-token: write
-    uses: dirstack/kodeks/.github/workflows/public-release.yml@f0dd524ddcdc8ccd82425b599ecb82c19872379e # v1.9.0
+    uses: dirstack/kodeks/.github/workflows/public-release.yml@faf4a48877c69c7d44cc8b2350cf57647ad72e09 # v1.9.1

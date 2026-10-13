@@ -10,7 +10,7 @@
     },
     "packages/highseat": {
       "name": "highseat",
-      "version": "0.0.2",
+      "version": "0.1.0-alpha.0",
       "devDependencies": {
         "@cloudflare/vitest-plugin": "^1.4.0",
         "@dirstack/kodeks": "1.9.0",

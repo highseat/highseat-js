@@ -37,9 +37,3 @@ export function isNextBuild(): boolean {
   if (typeof process === "undefined") return false
   return process.env.NEXT_PHASE === "phase-production-build"
 }
-
-/** Whether Node runs in production mode, as `next build` and `next start` do. */
-export function isProduction(): boolean {
-  if (typeof process === "undefined") return false
-  return process.env.NODE_ENV === "production"
-}

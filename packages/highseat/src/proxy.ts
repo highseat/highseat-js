@@ -20,7 +20,8 @@ export interface ProxyOptions {
   path?: string
   /**
    * The site secret, `hs_secret_…`, or an older one that starts `hs_proxy_` or `ana_proxy_`.
-   * Defaults to the `HIGHSEAT_SECRET` environment variable.
+   * Defaults to the `HIGHSEAT_SECRET` environment variable. Without one the proxy is off: the
+   * proxy path answers 503, or every request goes to `fallback`.
    */
   secret?: string
   /**
@@ -39,7 +40,8 @@ export interface ProxyOptions {
   /**
    * Answers a request on any path other than `path`, for a handler that sees every request on
    * the site: `fetch` in a Cloudflare Worker routed on the whole site, `next` in a Pages
-   * Function. Requires `path`.
+   * Function. Needs `path`: without it, or without the secret, the proxy is off and every
+   * request goes here, so the site still serves in a development setup without the variables.
    */
   fallback?: (request: Request) => Response | Promise<Response>
 }
@@ -117,20 +119,52 @@ function answerError(status: number, error: string) {
   return Response.json({ error }, { status, headers: { "cache-control": "no-store" } })
 }
 
-function getSecret(option: string | undefined): string {
-  const secret = option ?? findSecret()
+// A JSON body rather than an empty 404, so `curl -i` on the route handler's own URL tells this
+// answer apart from ingest's.
+function answerOtherPath() {
+  return answerError(404, "Not the proxy path. The Highseat proxy answers on its own path only.")
+}
 
-  if (!secret) {
-    throw new Error(
-      "highseat/proxy: no site secret. Set HIGHSEAT_SECRET to the secret from the site's Installation settings, or pass `secret`.",
-    )
-  }
+/** The site secret, or `undefined` when none is set. Throws on a value that is not one. */
+function findValidSecret(option: string | undefined): string | undefined {
+  const secret = option ?? findSecret()
+  if (!secret) return
+
   if (!SECRET_PREFIXES.some(prefix => secret.startsWith(prefix))) {
     throw new Error(
       `highseat/proxy: not a site secret. Copy it from the site's Installation settings; it starts with "${SECRET_PREFIXES[0]}".`,
     )
   }
   return secret
+}
+
+// The handler can be created per request (a Worker that reads its options from `env`), so a
+// missing variable is reported once per process rather than once per handler.
+let hasWarnedMissing = false
+
+/**
+ * The handler for a proxy missing a variable: every request goes to `fallback`, or the proxy
+ * path answers 503 naming what is missing.
+ */
+function createDisabledProxy(
+  missing: string[],
+  path: string | undefined,
+  fallback: ProxyOptions["fallback"],
+): ProxyHandler {
+  const names = missing.join(" and ")
+
+  // A Next.js build loads every route without serving one, often without the runtime variables.
+  if (!hasWarnedMissing && !isNextBuild()) {
+    hasWarnedMissing = true
+    const outcome = fallback ? "every request goes to `fallback`" : "the proxy path answers 503"
+    console.warn(`highseat/proxy: ${names} not set, so the proxy is off and ${outcome}.`)
+  }
+
+  return async function proxy(request) {
+    if (fallback) return fallback(request)
+    if (path !== undefined && new URL(request.url).pathname !== path) return answerOtherPath()
+    return answerError(503, `The Highseat proxy is off: set ${names}.`)
+  }
 }
 
 /** The request body, or `undefined` once it passes `MAX_EVENT_BYTES`. */
@@ -167,28 +201,35 @@ async function readEventBody(request: Request): Promise<Uint8Array<ArrayBuffer> 
  * handler, a Cloudflare Worker, a Pages Function, a Netlify or Vercel function, an Astro
  * endpoint or a Hono route.
  *
- * Throws when the secret is missing. Without one, ingest reads every visitor as the proxy's own
- * server and drops it as datacenter traffic, so the proxy fails at startup instead.
+ * A missing path or secret never throws: the handler passes every request to `fallback`, or
+ * answers the proxy path with a 503 naming the variable, and warns once. A value that is not a
+ * site secret throws, since that is a copying mistake rather than a variable left unset.
  */
 export function createProxy(options: ProxyOptions): ProxyHandler {
   const path = findProxyPath(options.path)
-  let secret: string
+  const { fallback } = options
+  let foundSecret: string | undefined
 
   try {
-    secret = getSecret(options.secret)
+    foundSecret = findValidSecret(options.secret)
   } catch (error) {
-    // Next.js loads every route while it builds, often without the runtime secrets. There the
-    // error waits for the first request rather than failing a build that never serves one.
+    // Next.js loads every route while it builds, so there the error waits for the first request
+    // rather than failing a build that never serves one.
     if (!isNextBuild()) throw error
     return () => Promise.reject(error)
   }
 
   const upstream = new URL(options.upstream ?? DEFAULT_UPSTREAM).origin
-  const { fallback } = options
 
-  if (fallback && path === undefined) {
-    throw new Error("highseat/proxy: `fallback` needs a path. Set HIGHSEAT_PATH, or pass `path`.")
-  }
+  // Without a secret, ingest would read every visitor as this server and drop it as datacenter
+  // traffic. Without a path, a handler that sees every request cannot tell the proxy's apart.
+  const missing = [
+    ...(fallback && path === undefined ? ["HIGHSEAT_PATH"] : []),
+    ...(foundSecret ? [] : ["HIGHSEAT_SECRET"]),
+  ]
+  if (!foundSecret || missing.length) return createDisabledProxy(missing, path, fallback)
+
+  const secret = foundSecret
 
   const clientIpReader = getClientIpReader(options.clientIp)
   let hasWarnedNoIp = false
@@ -237,7 +278,7 @@ export function createProxy(options: ProxyOptions): ProxyHandler {
 
   return async function proxy(request) {
     if (path !== undefined && new URL(request.url).pathname !== path) {
-      return fallback ? fallback(request) : new Response(null, { status: 404 })
+      return fallback ? fallback(request) : answerOtherPath()
     }
 
     if (request.method === "GET" || request.method === "HEAD") {

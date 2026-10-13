@@ -1,5 +1,5 @@
 import { createElement, type ReactElement } from "react"
-import { findNextSite, findProxyPath, isProduction } from "./env"
+import { findNextSite, findProxyPath } from "./env"
 import type { InjectOptions } from "./index"
 import { Highseat as ReactHighseat } from "./react"
 
@@ -65,9 +65,6 @@ export interface WithHighseatOptions {
 
 const DEFAULT_ROUTE = "/api/highseat"
 
-const NO_PATH_MESSAGE =
-  "highseat/next: no proxy path. Set HIGHSEAT_PATH to the path from the site's Installation settings, or pass `path`."
-
 // A dev session can ask for the rewrites more than once, so the warning is printed once.
 let hasWarnedNoPath = false
 
@@ -76,8 +73,10 @@ let hasWarnedNoPath = false
  * other route. The rewrite stays inside the app, so the handler still sees the visitor's IP, and
  * the route file never moves when the path rotates.
  *
- * Without a proxy path, `next build` fails, while `next dev` warns once and runs without the
- * rewrite.
+ * The proxy is optional. Without a path, `next dev` and `next build` warn once and leave the
+ * rewrite out, and `<Highseat />` loads the tracker from Highseat's host. Nothing here throws,
+ * so `next typegen` runs without the variable too. The build writes the rewrite, so a path set
+ * only at runtime points a dynamically rendered `<Highseat />` at a route that is not there.
  *
  * ```ts
  * // next.config.ts
@@ -94,15 +93,12 @@ export function withHighseat<Config extends object>(
   // Typed loosely so any Next.js version's config fits; only `rewrites` is read.
   const { rewrites: ownRewrites } = config as NextConfigWithRewrites
 
-  // Next.js hands the build phase only to a config written as a function, so a missing path is
-  // judged where the rewrites are read: `next build` reads them in production mode, `next dev`
-  // in development, and `next start` serves the ones the build wrote without asking again.
   async function passRewritesThrough(): Promise<Rewrite[] | RewritePhases> {
-    if (isProduction()) throw new Error(NO_PATH_MESSAGE)
-
     if (!hasWarnedNoPath) {
       hasWarnedNoPath = true
-      console.warn(`${NO_PATH_MESSAGE} The proxy is off until then.`)
+      console.warn(
+        "highseat/next: no HIGHSEAT_PATH, so this build has no proxy rewrite and the tracker loads from Highseat's host. For first-party delivery, set it to the path from the site's Installation settings, or pass `path`, for the build as well as at runtime: a path set only at runtime points the tracker at a route this build does not have.",
+      )
     }
     return (await ownRewrites?.()) ?? []
   }

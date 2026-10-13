@@ -21,10 +21,10 @@ const LIVE = Symbol.for("highseat")
 
 // A script tag with the parts the client reads: its attributes and its `error` listeners, which,
 // as in a browser, a listener added twice joins once.
-function createScript(dataset: Record<string, string> = {}): FakeScript {
+function createScript(dataset: Record<string, string> = {}, src = ""): FakeScript {
   const listeners = new Set<ErrorListener>()
   const script: FakeScript = {
-    src: "",
+    src,
     dataset,
     addEventListener: (type, listener) => type === "error" && listeners.add(listener),
     fail: () => listeners.forEach(listener => listener({ currentTarget: script })),
@@ -154,6 +154,33 @@ describe("getAttributionId", () => {
     host.window = {}
     // Another tool's snippet, which carries a `data-site` of its own.
     host.document = createDocument([createScript({ site: "ABCDEFGH" })])
+    const started = Date.now()
+
+    await expect(getAttributionId()).resolves.toBeUndefined()
+    expect(Date.now() - started).toBeLessThan(1000)
+  })
+
+  test("waits for a tracker script with an older site's UUID id", async () => {
+    const site = "2c2b8e5d-8d22-4a77-9def-f720b5292db1"
+
+    for (const src of ["https://site.test/0c1c2f2993", "/0c1c2f2993", SCRIPT_URL]) {
+      host.window = {}
+      host.document = createDocument([createScript({ site }, src)])
+      const id = getAttributionId()
+      host.window.highseat = { getAttributionId: () => "attr_1", [LIVE]: true }
+
+      await expect(id).resolves.toBe("attr_1")
+    }
+  })
+
+  test("resolves undefined at once for a UUID id on another tool's script", async () => {
+    host.window = {}
+    host.document = createDocument([
+      createScript(
+        { site: "2c2b8e5d-8d22-4a77-9def-f720b5292db1" },
+        "https://cdn.usefathom.com/script.js",
+      ),
+    ])
     const started = Date.now()
 
     await expect(getAttributionId()).resolves.toBeUndefined()

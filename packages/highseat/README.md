@@ -25,7 +25,7 @@ The package loads the tracker from Highseat, or from your site's proxy path, rat
 
 ## Next.js
 
-Set the site id from your site's Installation settings, and the proxy path if the site has one:
+Set the site id from your site's Installation settings, and the proxy path for first-party delivery:
 
 ```bash
 NEXT_PUBLIC_HIGHSEAT_SITE=site_…
@@ -50,7 +50,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 }
 ```
 
-The tracker counts each client-side navigation as one page view on its own.
+Without `HIGHSEAT_PATH`, `<Highseat />` loads the tracker from Highseat's host. The tracker counts each client-side navigation as one page view on its own.
 
 ## React
 
@@ -112,6 +112,8 @@ HIGHSEAT_PATH=/3f9a0c1e2b        # the site's proxy path
 HIGHSEAT_SECRET=hs_secret_...    # the site secret
 ```
 
+A missing variable never stops the site. Without the secret, or without the path on a handler with a `fallback`, `createProxy()` warns once and turns the proxy off: with a `fallback`, every request goes to it, and without one the proxy path answers `503` with a JSON `error` naming the variable. A local server without the variables therefore still starts and serves the site.
+
 Then load the tracker from the path. In Next.js, `<Highseat />` reads `HIGHSEAT_PATH` itself. Elsewhere, pass `src="/3f9a0c1e2b"` to `<Highseat />` or `inject()`, or use the script tag from Installation settings.
 
 To rotate the path, rotate it in Installation settings, update `HIGHSEAT_PATH` and the snippet, and redeploy. On a host whose route is a file or a config entry (Netlify, Vercel without Next.js, Astro), move that route too.
@@ -124,9 +126,9 @@ To rotate the path, rotate it in Installation settings, update `HIGHSEAT_PATH` a
 | --- | --- | --- |
 | `clientIp` | Required | Where the visitor's IP comes from: `"vercel"`, `"cloudflare"`, `"netlify"`, `"nginx"` (the `X-Real-IP` header your nginx sets), or a function `(request) => string`. The outermost proxy that sets the header decides the preset: behind a proxied Cloudflare record, use `"cloudflare"` on any origin (Next.js, TanStack Start, a Node server, with or without Traefik or nginx in between), whose `X-Real-IP` holds a Cloudflare edge address. A visitor can write any header the host does not overwrite, so there is no default and no fallback to `X-Forwarded-For`. |
 | `path` | `HIGHSEAT_PATH` | The proxy path. Any other path answers 404, or goes to `fallback`. Leave it unset where your router already sends only the proxy path to the handler. |
-| `secret` | `HIGHSEAT_SECRET` | The site secret. An older secret that starts `hs_proxy_` or `ana_proxy_` works too. `createProxy()` throws without one. |
+| `secret` | `HIGHSEAT_SECRET` | The site secret. An older secret that starts `hs_proxy_` or `ana_proxy_` works too. A value with neither prefix throws. |
 | `upstream` | `https://cdn.highseat.com` | The Highseat ingest origin. |
-| `fallback` | None | Answers every other path, for a handler that sees every request on the site. |
+| `fallback` | None | Answers every other path, for a handler that sees every request on the site. Needs `path`. |
 
 ### Next.js
 
@@ -150,7 +152,7 @@ export default withHighseat({
 
 Next.js loads `next.config.ts` with `require`, and the package is ES modules only, so the config needs Node 20.19 or 22.12 and later, the versions that `require` an ES module without a flag.
 
-`withHighseat()` rewrites `HIGHSEAT_PATH` to the route handler inside the app, so the visitor's IP survives and the route file never moves. Pass `{ route: "/stats" }` for a handler elsewhere. Without `HIGHSEAT_PATH`, `next build` fails, while `next dev` warns once and runs without the proxy. Off Vercel, the outermost proxy that sets the header decides the preset: `"cloudflare"` behind a proxied Cloudflare record, even with nginx or Traefik in between, and `"nginx"` behind nginx alone.
+`withHighseat()` rewrites `HIGHSEAT_PATH` to the route handler inside the app, so the visitor's IP survives and the route file never moves. Pass `{ route: "/stats" }` for a handler elsewhere. Without `HIGHSEAT_PATH`, `next dev` and `next build` warn once and leave the rewrite out, and `next typegen` runs as usual. Set the variable for the build as well as the server: the rewrite is written at build time. Off Vercel, the outermost proxy that sets the header decides the preset: `"cloudflare"` behind a proxied Cloudflare record, even with nginx or Traefik in between, and `"nginx"` behind nginx alone.
 
 ### Cloudflare Worker
 

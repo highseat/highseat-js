@@ -65,11 +65,6 @@ function sendEvent(headers: Record<string, string> = {}, body = '{"site":"site_1
 }
 
 describe("createProxy", () => {
-  test("throws without a site secret", () => {
-    expect(() => createProxy({ path: PATH, clientIp: "cloudflare" })).toThrow(/HIGHSEAT_SECRET/)
-    expect(() => createProxy({ ...OPTIONS, secret: "" })).toThrow(/HIGHSEAT_SECRET/)
-  })
-
   test("throws on a value that is not a site secret", () => {
     expect(() => createProxy({ ...OPTIONS, secret: "site_1" })).toThrow(/not a site secret/)
   })
@@ -91,12 +86,6 @@ describe("createProxy", () => {
     expect(getForwarded().url).toBe("https://cdn.highseat.com/script.js")
   })
 
-  test("throws on a fallback without a path to fall back from", () => {
-    expect(() => createProxy({ secret: SECRET, clientIp: "cloudflare", fallback: fetch })).toThrow(
-      /needs a path/,
-    )
-  })
-
   test("throws on a malformed upstream", () => {
     expect(() => createProxy({ ...OPTIONS, upstream: "cdn.highseat.com" })).toThrow()
   })
@@ -114,15 +103,58 @@ describe("createProxy", () => {
   )
 
   test.skipIf(typeof process === "undefined")(
-    "while Next.js builds, a missing secret waits for the first request",
+    "while Next.js builds, a malformed secret waits for the first request",
     () =>
       withEnv({ NEXT_PHASE: "phase-production-build" }, async () => {
-        const proxy = createProxy({ path: PATH, clientIp: "vercel" })
+        const proxy = createProxy({ ...OPTIONS, secret: "site_1" })
 
-        await expect(proxy(new Request(`${SITE}${PATH}`))).rejects.toThrow(/HIGHSEAT_SECRET/)
+        await expect(proxy(new Request(`${SITE}${PATH}`))).rejects.toThrow(/not a site secret/)
         expect(forwarded).toHaveLength(0)
       }),
   )
+
+  test.skipIf(typeof process === "undefined")(
+    "while Next.js builds, a missing secret prints no warning",
+    () =>
+      withEnv({ NEXT_PHASE: "phase-production-build" }, async () => {
+        createProxy({ path: PATH, clientIp: "vercel" })
+
+        expect(warn).not.toHaveBeenCalled()
+      }),
+  )
+})
+
+// The warning is printed once per process, so every case that prints it sits in one test.
+describe("without a path or a secret", () => {
+  test("never throws, answers or passes requests through, and warns once", async () => {
+    function page() {
+      return new Response("page")
+    }
+    const noSecret = createProxy({ path: PATH, clientIp: "cloudflare" })
+    const emptySecret = createProxy({ ...OPTIONS, secret: "" })
+    const noPath = createProxy({ secret: SECRET, clientIp: "cloudflare", fallback: page })
+    const noSecretWithFallback = createProxy({ path: PATH, clientIp: "cloudflare", fallback: page })
+
+    for (const proxy of [noSecret, emptySecret]) {
+      const response = await proxy(new Request(`${SITE}${PATH}`))
+      expect(response.status).toBe(503)
+      expect(response.headers.get("cache-control")).toBe("no-store")
+      expect(await response.json()).toEqual({
+        error: "The Highseat proxy is off: set HIGHSEAT_SECRET.",
+      })
+      expect((await proxy(new Request(`${SITE}/about`))).status).toBe(404)
+    }
+
+    for (const proxy of [noPath, noSecretWithFallback]) {
+      for (const url of [`${SITE}${PATH}`, `${SITE}/about`]) {
+        expect(await (await proxy(new Request(url, { method: "POST" }))).text()).toBe("page")
+      }
+    }
+
+    expect(forwarded).toHaveLength(0)
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(warn.mock.calls[0]?.[0]).toMatch(/HIGHSEAT_SECRET not set/)
+  })
 })
 
 describe("routing", () => {
@@ -158,7 +190,12 @@ describe("routing", () => {
 
   test("another path is a 404 without reaching ingest", async () => {
     const proxy = createProxy(OPTIONS)
+    const response = await proxy(new Request(`${SITE}/api/highseat`, { method: "POST" }))
 
+    expect(response.status).toBe(404)
+    expect(await response.json()).toEqual({
+      error: "Not the proxy path. The Highseat proxy answers on its own path only.",
+    })
     expect((await proxy(new Request(`${SITE}/about`))).status).toBe(404)
     expect((await proxy(new Request(`${SITE}${PATH}/script.js`))).status).toBe(404)
     expect(forwarded).toHaveLength(0)

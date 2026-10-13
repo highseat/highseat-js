@@ -67,27 +67,26 @@ describe("withHighseat", () => {
     expect(await config.rewrites()).toEqual({ beforeFiles: [PROXY_REWRITE], afterFiles: [] })
   })
 
+  // The warning is printed once per process, so both modes sit in one test.
   test.skipIf(typeof process === "undefined")(
-    "fails the production build without a proxy path",
-    () =>
-      withNodeEnv("production", async () => {
-        await expect(withHighseat({}).rewrites()).rejects.toThrow(/HIGHSEAT_PATH/)
-      }),
-  )
+    "never throws without a proxy path, warns once, and keeps the app's own config",
+    async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+      const own = { source: "/blog/:slug", destination: "/posts/:slug" }
 
-  test.skipIf(typeof process === "undefined")(
-    "warns once in development without a proxy path, and keeps the app's own config",
-    () =>
-      withNodeEnv("development", async () => {
-        const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
-        const own = { source: "/blog/:slug", destination: "/posts/:slug" }
-        const config = withHighseat({ reactStrictMode: true, rewrites: async () => [own] })
+      for (const mode of ["production", "development"]) {
+        await withNodeEnv(mode, async () => {
+          const config = withHighseat({ reactStrictMode: true, rewrites: async () => [own] })
 
-        expect(config.reactStrictMode).toBe(true)
-        expect(await config.rewrites()).toEqual([own])
-        expect(await config.rewrites()).toEqual([own])
-        expect(warn).toHaveBeenCalledTimes(1)
-        expect(warn.mock.calls[0]?.[0]).toMatch(/HIGHSEAT_PATH/)
-      }),
+          expect(config.reactStrictMode).toBe(true)
+          expect(await config.rewrites()).toEqual([own])
+          expect(await config.rewrites()).toEqual([own])
+          expect(await withHighseat({}).rewrites()).toEqual([])
+        })
+      }
+
+      expect(warn).toHaveBeenCalledTimes(1)
+      expect(warn.mock.calls[0]?.[0]).toMatch(/HIGHSEAT_PATH/)
+    },
   )
 })

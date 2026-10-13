@@ -158,6 +158,10 @@ export const SCRIPT_URL = "https://cdn.highseat.com/script.js"
 // only the symbol proves the tracker is running.
 const LIVE = Symbol.for("highseat")
 
+const SCRIPT_HOST = new URL(SCRIPT_URL).host
+// A site's proxy path: `/` and ten hex characters.
+const PROXY_PATH = /^\/[0-9a-f]{10}$/
+
 const ATTRIBUTION_TIMEOUT = 3000
 const ATTRIBUTION_POLL_INTERVAL = 50
 
@@ -181,12 +185,27 @@ function markFailed(event: Event) {
   failedScripts.add(event.currentTarget as HTMLScriptElement)
 }
 
-// Matched on the `site_` prefix as the tracker matches itself: another tool's snippet can carry a
-// `data-site` too.
+/**
+ * Whether a script tag loads the tracker, judged as the tracker judges itself. Fathom's snippet
+ * carries a `data-site` too, so a tag is matched by a `site_` id, or by a `src` on a proxy path
+ * or on Highseat's host: an older site's id is a UUID, which any tool could use.
+ */
+function isTrackerScript(script: HTMLScriptElement) {
+  const { site } = script.dataset
+  if (injectedScripts.has(script) || site?.startsWith("site_")) return true
+  if (site === undefined) return false
+
+  try {
+    // A browser hands back `src` resolved; the base only matters to a relative one.
+    const url = new URL(script.src, "http://localhost")
+    return url.host === SCRIPT_HOST || PROXY_PATH.test(url.pathname)
+  } catch {
+    return false
+  }
+}
+
 function findTrackerScripts() {
-  return Array.from(document.scripts).filter(
-    script => injectedScripts.has(script) || script.dataset.site?.startsWith("site_"),
-  )
+  return Array.from(document.scripts).filter(isTrackerScript)
 }
 
 function call(method: "track" | "identify", args: unknown[]) {

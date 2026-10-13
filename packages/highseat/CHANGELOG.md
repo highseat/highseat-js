@@ -1,5 +1,15 @@
 # highseat
 
+## 0.1.0-alpha.2
+
+### Patch Changes
+
+- The proxy is optional, and a missing variable no longer stops a build or a server. `withHighseat()` never throws: without `HIGHSEAT_PATH` it warns once and leaves the rewrite out, so `next typegen`, `next dev` and `next build` all run, and `<Highseat />` loads the tracker from Highseat's host. `createProxy()` no longer throws at creation without a path or a secret: with a `fallback` it passes every request through, and without one it answers the proxy path with a `503` whose JSON `error` names the missing variable. Both warn once. A secret with no known prefix still throws. A request on any other path now gets a `404` with a JSON `error`, so `curl -i` tells it apart from Highseat's own answer.
+
+  `getAttributionId()` finds a tracker script whose site id is a UUID, as older sites have, when the script loads from a proxy path or from Highseat's host. It used to resolve `undefined` at once on such a page.
+
+  The hosted tracker, which every version loads, now counts a 404 once per page path. A not-found page's `track("404")` queued before the tracker loads no longer adds a second `404` to the tracker's own, so remove any workaround that skips the call on a hard 404 landing. Each `404` is now sent at once.
+
 ## 0.1.0-alpha.1
 
 ### Minor Changes

@@ -1,5 +1,14 @@
 # highseat
 
+## 0.1.0-alpha.1
+
+### Minor Changes
+
+- `createProxy()` from `highseat/proxy` is a working first-party proxy for any runtime with `fetch`. On the site's proxy path, a `GET` serves the tracker and a `POST` forwards its events, with the site secret and the visitor's IP read from the host you name in `clientIp` (`"vercel"`, `"cloudflare"`, `"netlify"`, `"nginx"` or a function). The path and the secret default to the `HIGHSEAT_PATH` and `HIGHSEAT_SECRET` environment variables, so rotating either is an environment change and a redeploy. A path written without its leading slash works, and a secret minted under the older `hs_proxy_` or `ana_proxy_` prefix keeps working. `clientIp` is now required, and the handler warns once when the header it names is empty.
+
+  `withHighseat()` from `highseat/next` rewrites the proxy path to your route handler, so a Next.js app keeps one route file whatever the path is. Without `HIGHSEAT_PATH`, `next build` fails and `next dev` warns and runs without the proxy. Every entry point now resolves through `require` as well as `import`, which `next.config.ts` needs. The package now requires Node 20.19 or 22.12 and later, the versions that `require` an ES module without a flag.
+- `track()`, `identify()` and `getAttributionId()` now talk to the hosted tracker, queueing calls made before it loads. `track()` is typed: built-in events such as `file_download` check their properties, and a site declares its own events, and an optional strict mode, through the `Register` interface. `<Highseat />` from `highseat/react` and `highseat/next`, and `inject()` from `highseat`, load the tracker from Highseat or the site's proxy path.
+
 ## 0.1.0-alpha.0
 
 ### Minor Changes

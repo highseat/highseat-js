@@ -1,16 +1,263 @@
+import { findProxyPath, findSecret, isNextBuild } from "./env"
+
+/** A host whose own header carries the visitor's IP. */
+export type ClientIpPreset = "vercel" | "cloudflare" | "netlify" | "nginx"
+
+/**
+ * Where the proxy reads the visitor's IP: a host preset, or a function for any other setup. A
+ * function returns the IP, or nothing when the request carries none.
+ */
+export type ClientIp = ClientIpPreset | ((request: Request) => string | null | undefined)
+
 export interface ProxyOptions {
-  /** The site's proxy path. */
+  /**
+   * The site's proxy path from Installation settings, such as `/3f9a0c1e2b`, with or without its
+   * leading slash. A request on any
+   * other path is answered 404, or handed to `fallback`. Defaults to the `HIGHSEAT_PATH`
+   * environment variable. Leave both unset on a host whose router already sends only the proxy
+   * path here, such as a file named after the path.
+   */
   path?: string
-  /** The site secret, `hs_secret_…`. */
+  /**
+   * The site secret, `hs_secret_…`, or an older one that starts `hs_proxy_` or `ana_proxy_`.
+   * Defaults to the `HIGHSEAT_SECRET` environment variable.
+   */
   secret?: string
-  /** The ingest origin the proxy forwards to. */
+  /**
+   * Where the visitor's IP comes from: `vercel`, `cloudflare`, `netlify`, `nginx` (the
+   * `X-Real-IP` header your nginx sets), or a function. A visitor can write any header the host
+   * does not overwrite, so there is no default.
+   *
+   * The outermost proxy that sets the header decides the preset. Behind a proxied Cloudflare
+   * record, use `cloudflare` on any origin, not only a Worker or a Pages Function: a Next.js,
+   * TanStack Start or Node server behind Cloudflare, with or without Traefik or nginx in between,
+   * sees a Cloudflare edge address in `X-Real-IP`, and the visitor's IP in `cf-connecting-ip`.
+   */
+  clientIp: ClientIp
+  /** The ingest origin the proxy forwards to. Defaults to `https://cdn.highseat.com`. */
   upstream?: string
+  /**
+   * Answers a request on any path other than `path`, for a handler that sees every request on
+   * the site: `fetch` in a Cloudflare Worker routed on the whole site, `next` in a Pages
+   * Function. Requires `path`.
+   */
+  fallback?: (request: Request) => Response | Promise<Response>
 }
 
 /** A fetch handler, the shape every supported runtime and framework route accepts. */
 export type ProxyHandler = (request: Request) => Promise<Response>
 
-/** Creates the first-party proxy handler for a site. */
-export function createProxy(_options: ProxyOptions = {}): ProxyHandler {
-  return async () => new Response("Not implemented", { status: 501 })
+const DEFAULT_UPSTREAM = "https://cdn.highseat.com"
+// The current prefix first. Ingest still accepts the secrets minted under the older two, so a
+// site keeps its secret when it moves to this handler.
+const SECRET_PREFIXES = ["hs_secret_", "hs_proxy_", "ana_proxy_"]
+
+const CLIENT_IP_HEADERS: Record<ClientIpPreset, string> = {
+  vercel: "x-real-ip",
+  // Read from the inbound request: Cloudflare overwrites it on the Worker's own subrequest.
+  cloudflare: "cf-connecting-ip",
+  netlify: "x-nf-client-connection-ip",
+  nginx: "x-real-ip",
+}
+
+// The visitor headers each direction forwards. Copied by name, so a cookie, an `Authorization`
+// header or a visitor's own `x-hs-*` header never reaches ingest.
+const SCRIPT_REQUEST_HEADERS = ["user-agent", "if-none-match"]
+const EVENT_REQUEST_HEADERS = ["content-type", "user-agent", "origin"]
+
+// The upstream headers the response keeps. Rebuilt by name because Node, Bun and Deno hand back
+// a decompressed body under the original `content-encoding` and `content-length`, which would
+// describe bytes this handler no longer has. `x-hs-ip` and `x-hs-ip-source` show which IP
+// ingest resolved, for `curl -i` against the proxy path.
+const RESPONSE_HEADERS = [
+  "content-type",
+  "etag",
+  "cache-control",
+  "vary",
+  "retry-after",
+  "x-hs-ip",
+  "x-hs-ip-source",
+]
+
+// Statuses whose response must not carry a body, which the Response constructor enforces.
+const NULL_BODY_STATUSES = new Set([101, 204, 205, 304])
+
+const UPSTREAM_TIMEOUT_MS = 10_000
+
+// Ingest refuses a larger batch, so a bigger body is answered here without buffering the rest.
+const MAX_EVENT_BYTES = 512 * 1024
+
+interface ClientIpReader {
+  read: (request: Request) => string
+  /** Where `read` looks, for the warning about an empty IP. */
+  source: string
+}
+
+function getClientIpReader(clientIp: ClientIp): ClientIpReader {
+  if (typeof clientIp === "function") {
+    return { read: request => clientIp(request)?.trim() ?? "", source: "the clientIp function" }
+  }
+
+  const header = CLIENT_IP_HEADERS[clientIp]
+  if (!header) throw new Error(`highseat/proxy: unknown clientIp preset "${String(clientIp)}".`)
+  return {
+    read: request => request.headers.get(header)?.trim() ?? "",
+    source: `the "${clientIp}" preset's ${header} header`,
+  }
+}
+
+function copyHeaders(from: Headers, to: Headers, names: string[]) {
+  for (const name of names) {
+    const value = from.get(name)
+    if (value !== null) to.set(name, value)
+  }
+}
+
+function answerError(status: number, error: string) {
+  return Response.json({ error }, { status, headers: { "cache-control": "no-store" } })
+}
+
+function getSecret(option: string | undefined): string {
+  const secret = option ?? findSecret()
+
+  if (!secret) {
+    throw new Error(
+      "highseat/proxy: no site secret. Set HIGHSEAT_SECRET to the secret from the site's Installation settings, or pass `secret`.",
+    )
+  }
+  if (!SECRET_PREFIXES.some(prefix => secret.startsWith(prefix))) {
+    throw new Error(
+      `highseat/proxy: not a site secret. Copy it from the site's Installation settings; it starts with "${SECRET_PREFIXES[0]}".`,
+    )
+  }
+  return secret
+}
+
+/** The request body, or `undefined` once it passes `MAX_EVENT_BYTES`. */
+async function readEventBody(request: Request): Promise<Uint8Array<ArrayBuffer> | undefined> {
+  if (Number(request.headers.get("content-length")) > MAX_EVENT_BYTES) return
+  if (!request.body) return new Uint8Array()
+
+  const reader = request.body.getReader()
+  const chunks: Uint8Array[] = []
+  let size = 0
+
+  for (let chunk = await reader.read(); !chunk.done; chunk = await reader.read()) {
+    size += chunk.value.byteLength
+    if (size > MAX_EVENT_BYTES) {
+      void reader.cancel()
+      return
+    }
+    chunks.push(chunk.value)
+  }
+
+  const body = new Uint8Array(size)
+  let offset = 0
+  for (const chunk of chunks) {
+    body.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return body
+}
+
+/**
+ * Creates the first-party proxy handler for a site. A GET serves the tracker script and a POST
+ * forwards its events, both to the ingest host, with the site secret and the visitor's IP. The
+ * returned function takes a `Request` and returns a `Response`, so it mounts as a Next.js route
+ * handler, a Cloudflare Worker, a Pages Function, a Netlify or Vercel function, an Astro
+ * endpoint or a Hono route.
+ *
+ * Throws when the secret is missing. Without one, ingest reads every visitor as the proxy's own
+ * server and drops it as datacenter traffic, so the proxy fails at startup instead.
+ */
+export function createProxy(options: ProxyOptions): ProxyHandler {
+  const path = findProxyPath(options.path)
+  let secret: string
+
+  try {
+    secret = getSecret(options.secret)
+  } catch (error) {
+    // Next.js loads every route while it builds, often without the runtime secrets. There the
+    // error waits for the first request rather than failing a build that never serves one.
+    if (!isNextBuild()) throw error
+    return () => Promise.reject(error)
+  }
+
+  const upstream = new URL(options.upstream ?? DEFAULT_UPSTREAM).origin
+  const { fallback } = options
+
+  if (fallback && path === undefined) {
+    throw new Error("highseat/proxy: `fallback` needs a path. Set HIGHSEAT_PATH, or pass `path`.")
+  }
+
+  const clientIpReader = getClientIpReader(options.clientIp)
+  let hasWarnedNoIp = false
+
+  // Ingest answers 400 to every event without a visitor IP and says nothing about the preset,
+  // so the first request without one names the source it read.
+  function readClientIp(request: Request) {
+    const ip = clientIpReader.read(request)
+
+    if (!ip && !hasWarnedNoIp) {
+      hasWarnedNoIp = true
+      console.warn(
+        `highseat/proxy: no visitor IP in ${clientIpReader.source}, so Highseat refuses every event. Set clientIp to the outermost proxy in front of this server.`,
+      )
+    }
+    return ip
+  }
+
+  function buildUpstreamHeaders(request: Request, names: string[]) {
+    const headers = new Headers({
+      // The response never copies `content-encoding`, so ingest is asked for a plain body.
+      "accept-encoding": "identity",
+      "x-hs-secret": secret,
+      "x-hs-client-ip": readClientIp(request),
+    })
+    copyHeaders(request.headers, headers, names)
+    return headers
+  }
+
+  async function forward(url: string, init: RequestInit) {
+    let response: Response
+
+    try {
+      response = await fetch(url, { ...init, signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS) })
+    } catch {
+      return answerError(502, "Highseat is unreachable from this proxy.")
+    }
+
+    const headers = new Headers()
+    copyHeaders(response.headers, headers, RESPONSE_HEADERS)
+    if (init.method === "POST") headers.set("cache-control", "no-store")
+
+    const body = NULL_BODY_STATUSES.has(response.status) ? null : response.body
+    return new Response(body, { status: response.status, headers })
+  }
+
+  return async function proxy(request) {
+    if (path !== undefined && new URL(request.url).pathname !== path) {
+      return fallback ? fallback(request) : new Response(null, { status: 404 })
+    }
+
+    if (request.method === "GET" || request.method === "HEAD") {
+      return forward(`${upstream}/script.js`, {
+        method: request.method,
+        headers: buildUpstreamHeaders(request, SCRIPT_REQUEST_HEADERS),
+      })
+    }
+
+    if (request.method === "POST") {
+      const body = await readEventBody(request)
+      if (!body) return answerError(413, "The event batch is too large.")
+
+      return forward(`${upstream}/api/event`, {
+        method: "POST",
+        headers: buildUpstreamHeaders(request, EVENT_REQUEST_HEADERS),
+        body,
+      })
+    }
+
+    return new Response(null, { status: 405, headers: { allow: "GET, HEAD, POST" } })
+  }
 }

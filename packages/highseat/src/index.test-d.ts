@@ -1,4 +1,5 @@
 import { getAttributionId, identify, inject, track } from "highseat"
+import { withHighseat } from "highseat/next"
 import type { HighseatProps as NextHighseatProps } from "highseat/next"
 import { createProxy } from "highseat/proxy"
 import type { HighseatProps } from "highseat/react"
@@ -109,9 +110,24 @@ void ({ src: "/3f9a0c1e2b" } satisfies HighseatProps)
 void ({} satisfies NextHighseatProps)
 void ({ hashRouting: true } satisfies NextHighseatProps)
 
-const proxy = createProxy({ secret: "hs_secret_1" })
+const proxy = createProxy({ secret: "hs_secret_1", clientIp: "vercel" })
+
+// @ts-expect-error The client IP source is required: no header is safe on every host.
+createProxy({ secret: "hs_secret_1" })
+
+// @ts-expect-error The client IP preset names a supported host.
+createProxy({ clientIp: "heroku" })
+
+createProxy({ clientIp: request => request.headers.get("fly-client-ip") })
+
+// A Worker's own fetch and a Pages Function's next both fit the fallback.
+createProxy({ clientIp: "cloudflare", path: "/3f9a0c1e2b", fallback: fetch })
 
 void (proxy(new Request("https://example.com/")) satisfies Promise<Response>)
 
 // @ts-expect-error The handler takes a Request, not a URL string.
 void proxy("https://example.com/")
+
+// The config keeps its own type, so Next.js still checks every other field.
+const config = withHighseat({ reactStrictMode: true, rewrites: async () => [] })
+void (config.reactStrictMode satisfies boolean)

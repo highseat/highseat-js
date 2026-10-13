@@ -1,0 +1,27 @@
+# Publishes every package version that is not on npm yet, with provenance, and creates its
+# GitHub Release. Each sync from the monorepo is a push to main, so a merged "Version
+# Packages" pull request reaches npm without anyone running `npm publish`. A push that
+# changes no version publishes nothing.
+#
+# npm trusts this file by name (trusted publishing, no NPM_TOKEN): renaming it breaks
+# publishing until the trusted publisher on npmjs.com names the new file. The job runs on
+# GitHub-hosted runners only.
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    permissions:
+      contents: write
+      id-token: write
+    uses: dirstack/kodeks/.github/workflows/public-release.yml@f0dd524ddcdc8ccd82425b599ecb82c19872379e # v1.9.0

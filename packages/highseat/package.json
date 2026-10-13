@@ -1,0 +1,69 @@
+{
+  "name": "highseat",
+  "version": "0.0.2",
+  "description": "Highseat analytics for JavaScript: typed tracking, a first-party proxy and framework components.",
+  "keywords": [
+    "analytics",
+    "cookieless",
+    "highseat",
+    "privacy",
+    "web-analytics"
+  ],
+  "homepage": "https://github.com/highseat/highseat-js#readme",
+  "bugs": {
+    "email": "support@highseat.com"
+  },
+  "license": "MIT",
+  "author": "Piotr Kulpinski",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/highseat/highseat-js.git",
+    "directory": "packages/highseat"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts",
+    "./react": "./src/react.ts",
+    "./next": "./src/next.ts",
+    "./proxy": "./src/proxy.ts"
+  },
+  "publishConfig": {
+    "access": "public",
+    "directory": "dist"
+  },
+  "scripts": {
+    "build": "tsdown && kodeks prepare-package",
+    "check-exports": "node scripts/check-exports.ts",
+    "check-types": "tsc --noEmit",
+    "test:bun": "bun test",
+    "test:node": "vitest run --project node",
+    "test:workerd": "vitest run --project workerd"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "^1.4.0",
+    "@dirstack/kodeks": "1.9.0",
+    "@types/node": "^24.0.0",
+    "tsdown": "^0.23.1",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.4"
+  },
+  "peerDependencies": {
+    "next": ">=14",
+    "react": ">=18"
+  },
+  "peerDependenciesMeta": {
+    "next": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    }
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

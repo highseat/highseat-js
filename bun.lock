@@ -5,7 +5,7 @@
     "": {
       "name": "highseat-js",
       "devDependencies": {
-        "@dirstack/kodeks": "1.9.1",
+        "@dirstack/kodeks": "1.9.2",
       },
     },
     "packages/highseat": {
@@ -13,7 +13,7 @@
       "version": "0.1.0-alpha.0",
       "devDependencies": {
         "@cloudflare/vitest-plugin": "^1.4.0",
-        "@dirstack/kodeks": "1.9.1",
+        "@dirstack/kodeks": "1.9.2",
         "@types/node": "^24.0.0",
         "tsdown": "^0.23.1",
         "typescript": "^7.0.2",
@@ -48,7 +48,7 @@
 
     "@cspotcode/source-map-support": ["@cspotcode/source-map-support@0.8.1", "", { "dependencies": { "@jridgewell/trace-mapping": "0.3.9" } }, "sha512-IchNf6dN4tHoMFIn/7OE8LWZ19Y6q/67Bmf6vnGREv8RSbBVb9LPJxEcnwrcwX6ixSvaiGoomAUvu4YSxXrVgw=="],
 
-    "@dirstack/kodeks": ["@dirstack/kodeks@1.9.1", "", { "peerDependencies": { "@commitlint/cli": ">=21", "@commitlint/config-conventional": ">=21", "conventional-changelog-conventionalcommits": ">=10", "eslint-plugin-better-tailwindcss": ">=4", "lefthook": ">=2", "oxfmt": ">=0.58", "oxlint": ">=1.73", "semantic-release": ">=25", "typescript": ">=5" }, "optionalPeers": ["@commitlint/cli", "@commitlint/config-conventional", "conventional-changelog-conventionalcommits", "eslint-plugin-better-tailwindcss", "lefthook", "oxfmt", "oxlint", "semantic-release", "typescript"], "bin": { "kodeks": "dist/cli/kodeks.js" } }, "sha512-THRPWEfdXS7yk8lXDohPG+0hvkUt0HrO8E8NAXZRUjOo7HWHGGA1rxTf5CU8kXAHO3ep9XNXgPadaQlByq9+Jg=="],
+    "@dirstack/kodeks": ["@dirstack/kodeks@1.9.2", "", { "peerDependencies": { "@commitlint/cli": ">=21", "@commitlint/config-conventional": ">=21", "conventional-changelog-conventionalcommits": ">=10", "eslint-plugin-better-tailwindcss": ">=4", "lefthook": ">=2", "oxfmt": ">=0.58", "oxlint": ">=1.73", "semantic-release": ">=25", "typescript": ">=5" }, "optionalPeers": ["@commitlint/cli", "@commitlint/config-conventional", "conventional-changelog-conventionalcommits", "eslint-plugin-better-tailwindcss", "lefthook", "oxfmt", "oxlint", "semantic-release", "typescript"], "bin": { "kodeks": "dist/cli/kodeks.js" } }, "sha512-hUI0nnkGgPpmrOrcor/uNOrLR15pmho37nNPRBUL20J/8LZAbp6q0i7oq1x/xleckmj2yd7KGetl1ZbRYQSw3g=="],
 
     "@emnapi/runtime": ["@emnapi/runtime@1.11.3", "", { "dependencies": { "tslib": "^2.4.0" } }, "sha512-Xz4Tpyki7XyrpbUK1jR1AhdAdaXyhhY4lZ3neLodmhpuWfy2PAQN5B46sAiU4liOXGLkHypn/qU+jvfWSCYYLA=="],
 

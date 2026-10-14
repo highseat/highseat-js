@@ -154,6 +154,54 @@ Next.js loads `next.config.ts` with `require`, and the package is ES modules onl
 
 `withHighseat()` rewrites `HIGHSEAT_PATH` to the route handler inside the app, so the visitor's IP survives and the route file never moves. Pass `{ route: "/stats" }` for a handler elsewhere. Without `HIGHSEAT_PATH`, `next dev` and `next build` warn once and leave the rewrite out, and `next typegen` runs as usual. Set the variable for the build as well as the server: the rewrite is written at build time. Off Vercel, the outermost proxy that sets the header decides the preset: `"cloudflare"` behind a proxied Cloudflare record, even with nginx or Traefik in between, and `"nginx"` behind nginx alone.
 
+### TanStack Start
+
+```ts
+// src/server.ts
+import handler, { createServerEntry } from "@tanstack/react-start/server-entry"
+import { createProxy } from "highseat/proxy"
+
+const proxy = createProxy({
+  clientIp: "cloudflare",
+  fallback: request => handler.fetch(request),
+})
+
+export default createServerEntry({ fetch: request => proxy(request) })
+```
+
+```ts
+// vite.config.ts
+import { defineConfig, loadEnv } from "vite"
+
+export default defineConfig(({ mode }) => ({
+  // Loads HIGHSEAT_PATH alone, so the site secret beside it never reaches the bundle.
+  define: {
+    "import.meta.env.HIGHSEAT_PATH": JSON.stringify(
+      loadEnv(mode, process.cwd(), "HIGHSEAT_PATH").HIGHSEAT_PATH,
+    ),
+  },
+  // Your own config.
+}))
+```
+
+```tsx
+// src/routes/__root.tsx
+<Highseat site={import.meta.env.VITE_HIGHSEAT_SITE} src={import.meta.env.HIGHSEAT_PATH} />
+```
+
+The server entry answers `HIGHSEAT_PATH` with the proxy and hands every other request to the app. A file route named after the path does not work: a catch-all route such as `$id` matches it first. The `define` gives the browser the same path, so set `HIGHSEAT_PATH` for the build as well as the server, as a build argument in a Docker build. Pick the preset for the outermost proxy that sets the header, as for Next.js.
+
+`fallback` receives the request alone, so the app loses the options the server entry was called with. An app that reads them routes the path itself, with a proxy created without `fallback`:
+
+```ts
+export default createServerEntry({
+  fetch: (request, options) =>
+    new URL(request.url).pathname === process.env.HIGHSEAT_PATH
+      ? proxy(request)
+      : handler.fetch(request, options),
+})
+```
+
 ### Cloudflare Worker
 
 ```ts

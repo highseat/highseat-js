@@ -2,12 +2,10 @@
 
 Highseat analytics for JavaScript: typed tracking, a first-party proxy and framework components.
 
-> **Pre-release.** The `alpha` versions can change shape between releases.
-
 ## Install
 
 ```bash
-npm install highseat@alpha
+npm install highseat
 ```
 
 ## Entry points

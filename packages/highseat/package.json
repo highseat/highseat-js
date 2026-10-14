@@ -1,6 +1,6 @@
 {
   "name": "highseat",
-  "version": "0.1.0-alpha.2",
+  "version": "0.1.0",
   "description": "Highseat analytics for JavaScript: typed tracking, a first-party proxy and framework components.",
   "keywords": [
     "analytics",

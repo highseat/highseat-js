@@ -1,5 +1,22 @@
 # highseat
 
+## 0.1.0
+
+### Minor Changes
+
+- First stable release. `npm install highseat` now installs the working package instead of the empty `0.0.2` placeholder.
+
+  - `track()`, `identify()` and `getAttributionId()` from `highseat` talk to the hosted tracker and queue calls made before it loads. `track()` is typed: built-in events such as `file_download` check their properties, and a site declares its own events, and an optional strict mode, through the `Register` interface.
+  - `<Highseat />` from `highseat/react` and `highseat/next`, and `inject()` from `highseat`, load the tracker from Highseat or from the site's proxy path.
+  - `createProxy()` from `highseat/proxy` is a first-party proxy for any runtime with `fetch`. On the site's proxy path, a `GET` serves the tracker and a `POST` forwards its events, with the site secret and the visitor's IP read from the host you name in `clientIp` (`"vercel"`, `"cloudflare"`, `"netlify"`, `"nginx"` or a function). The path and the secret default to the `HIGHSEAT_PATH` and `HIGHSEAT_SECRET` environment variables. The proxy is optional: without a path or a secret it warns once, then passes every request to its `fallback`, or answers the proxy path with a `503` naming the missing variable.
+  - `withHighseat()` from `highseat/next` rewrites the proxy path to your route handler, so a Next.js app keeps one route file whatever the path is. Without `HIGHSEAT_PATH` it warns once and leaves the rewrite out.
+
+  Every entry point resolves through `import` and `require`, and the package requires Node 20.19 or 22.12 and later. Until 1.0, a breaking change ships as a minor version, which a `^0.1.0` range does not install.
+
+### Patch Changes
+
+- The README covers TanStack Start: the proxy in a custom server entry, the Vite `define` that gives the browser `HIGHSEAT_PATH`, and the route an app takes when it needs the server entry's options.
+
 ## 0.1.0-alpha.2
 
 ### Patch Changes

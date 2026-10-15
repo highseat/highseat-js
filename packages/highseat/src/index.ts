@@ -109,12 +109,19 @@ export type TrackArgs<Name extends string> = [Name] extends [EventName]
     : [properties: KnownEvents[Name]]
   : [properties?: Properties]
 
+/**
+ * A user id from your own system, as {@link identify} takes it. A string or a number identifies
+ * the visitor, `null` clears the id, and `undefined` or an empty string changes nothing. Pass your
+ * own database id, never an email or other personal data.
+ */
+export type UserId = string | number | null | undefined
+
 /** The tracker's API on `window.highseat`, or the queue that stands in for it until it loads. */
 export interface HighseatGlobal {
   /** Records an event. */
   track?: (name: string, properties?: Properties) => void
   /** Sets or clears the visitor's user id. */
-  identify?: (id: string | number | null | undefined) => void
+  identify?: (id: UserId) => void
   /** The id that joins a payment to this tab's visit. */
   getAttributionId?: () => string | undefined
   /** Calls made before the tracker loaded, drained in order when it starts. */
@@ -239,7 +246,7 @@ export function track<Name extends TrackName>(name: Name, ...args: TrackArgs<Nam
  * visits. `null` clears it at sign-out. An empty or `undefined` id is ignored, so
  * `identify(user?.id)` before a session loads does not sign the visitor out.
  */
-export function identify(id: string | number | null | undefined): void {
+export function identify(id: UserId): void {
   call("identify", [id])
 }
 

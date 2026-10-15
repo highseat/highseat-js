@@ -60,7 +60,10 @@
     "@dirstack/kodeks": "1.9.2",
     "@types/node": "^24.0.0",
     "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.3",
+    "happy-dom": "^20.14.5",
     "react": "^19.2.8",
+    "react-dom": "^19.2.8",
     "tsdown": "^0.23.1",
     "typescript": "^7.0.2",
     "vitest": "^5.0.4"

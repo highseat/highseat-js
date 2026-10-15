@@ -1,18 +1,20 @@
 import { createElement, type ReactElement } from "react"
 import { findNextSite, findProxyPath } from "./env"
-import type { InjectOptions } from "./index"
-import { Highseat as ReactHighseat } from "./react"
+import { Highseat as ReactHighseat, type HighseatProps as ReactHighseatProps } from "./react"
 
 export { createProxy } from "./proxy"
+export { useIdentify } from "./react"
 export type { ClientIp, ClientIpPreset, ProxyHandler, ProxyOptions } from "./proxy"
 
-export interface HighseatProps extends Partial<InjectOptions> {}
+export interface HighseatProps extends Partial<ReactHighseatProps> {}
 
 /**
  * Loads the Highseat tracker in a Next.js app. Render it once, in the root layout. The site id
  * comes from `NEXT_PUBLIC_HIGHSEAT_SITE`, and the script loads from the site's proxy path in
  * `HIGHSEAT_PATH` when one is set. `HIGHSEAT_PATH` is a server variable, so in the Pages Router,
  * where the layout also renders in the browser, pass `src` instead. A prop wins over its variable.
+ * `userId` takes an id the server already knows. For a session read in the browser, call
+ * `useIdentify` in a client component instead.
  */
 export function Highseat(props: HighseatProps): ReactElement | null {
   const site = props.site ?? findNextSite()

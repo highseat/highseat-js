@@ -13,6 +13,9 @@ const config: ViteUserConfig = defineConfig({
         test: {
           name: "workerd",
           include: ["src/**/*.test.ts"],
+          // The React tests render into happy-dom, which needs `node:vm`. A Worker never runs a
+          // component's effects, and `identity.test.ts` covers the logic they call.
+          exclude: ["src/react.test.ts"],
           // workerd cannot read Vitest's module cache, which sits in the root node_modules.
           fsModuleCache: false,
         },

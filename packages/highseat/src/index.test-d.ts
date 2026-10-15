@@ -1,7 +1,8 @@
 import { getAttributionId, identify, inject, track } from "highseat"
-import { withHighseat } from "highseat/next"
+import { useIdentify as useNextIdentify, withHighseat } from "highseat/next"
 import type { HighseatProps as NextHighseatProps } from "highseat/next"
 import { createProxy } from "highseat/proxy"
+import { useIdentify } from "highseat/react"
 import type { HighseatProps } from "highseat/react"
 
 declare module "highseat" {
@@ -105,6 +106,36 @@ void ({ site: "site_1", src: "/3f9a0c1e2b" } satisfies HighseatProps)
 
 // @ts-expect-error The React component needs the site id.
 void ({ src: "/3f9a0c1e2b" } satisfies HighseatProps)
+
+// The component takes the site's own user id, `null` once signed out, or `undefined` while loading.
+void ({ site: "site_1", userId: "user_1" } satisfies HighseatProps)
+void ({ site: "site_1", userId: 42 } satisfies HighseatProps)
+void ({ site: "site_1", userId: null } satisfies HighseatProps)
+void ({ site: "site_1", userId: undefined } satisfies HighseatProps)
+void ({ userId: "user_1" } satisfies NextHighseatProps)
+
+// @ts-expect-error `userId` takes an id, not the user object.
+void ({ site: "site_1", userId: { id: "user_1" } } satisfies HighseatProps)
+
+// @ts-expect-error The Next.js component takes an id, not the user object.
+void ({ userId: { id: "user_1" } } satisfies NextHighseatProps)
+
+useIdentify("user_1")
+useIdentify(42)
+useIdentify(null)
+useIdentify(undefined)
+
+// @ts-expect-error The hook needs a value: `undefined` while the session loads.
+useIdentify()
+
+// @ts-expect-error The hook takes an id, not the user object.
+useIdentify({ id: "user_1" })
+
+// @ts-expect-error The prop is `userId`, so a user object under `user` is caught too.
+void ({ site: "site_1", user: { id: "user_1" } } satisfies HighseatProps)
+
+// The Next.js entry point exports the same hook.
+void (useNextIdentify satisfies typeof useIdentify)
 
 // The Next.js component reads the site id from the environment.
 void ({} satisfies NextHighseatProps)

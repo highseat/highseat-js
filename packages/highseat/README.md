@@ -13,8 +13,8 @@ npm install highseat
 | Import | Contents | Needs |
 | --- | --- | --- |
 | `highseat` | `track()`, `identify()`, `getAttributionId()` and `inject()` | Nothing |
-| `highseat/react` | `<Highseat />` | React |
-| `highseat/next` | `<Highseat />`, `createProxy()` and `withHighseat()` for Next.js | Next.js |
+| `highseat/react` | `<Highseat />` and `useIdentify()` | React |
+| `highseat/next` | `<Highseat />`, `useIdentify()`, `createProxy()` and `withHighseat()` for Next.js | Next.js |
 | `highseat/proxy` | `createProxy()`, a first-party proxy for any runtime with `fetch` | Nothing |
 
 Each entry point loads on its own and imports no framework it does not name, so `highseat/proxy` runs in a Cloudflare Worker without React installed.
@@ -89,6 +89,43 @@ declare module "highseat" {
 ```
 
 Without `strict: true`, any other name still compiles as a custom event. The declarations are types only and add nothing to your bundle.
+
+### Identify users
+
+`identify()` links the visitor to a user id from your own system, on every later event and across visits. Pass your own database id, never an email or other personal data. `identify(null)` clears the id, and an empty or `undefined` id changes nothing.
+
+Most sites never call `identify()` directly. They pass the signed-in user's id instead, and the package calls `identify()` each time the value changes. A string or a number identifies the visitor. `null` means signed out, so a sign-out or an expired session clears the id. A sign-out in another tab clears it too once your auth library updates the session in this tab. `undefined` means the session is still loading, and changes nothing. The same id on every render calls `identify()` once.
+
+When the server already knows the user, pass the id to `<Highseat />`:
+
+```tsx
+<Highseat site="site_…" userId={user?.id ?? null} />
+```
+
+When the session comes from a client hook, call `useIdentify()` in any client component. It needs no `<Highseat />` nearby, so a Next.js App Router site keeps `<Highseat />` in its server layout and every page static. `highseat/next` and `highseat/react` both export it:
+
+```tsx
+"use client"
+
+import { useIdentify } from "highseat/next"
+import { useSession } from "~/lib/auth-client"
+
+export function IdentifyUser() {
+  const { data, isPending } = useSession()
+  useIdentify(isPending ? undefined : (data?.user.id ?? null))
+  return null
+}
+```
+
+The value has to tell loading apart from signed out. `useIdentify(session?.user.id)` passes `undefined` after sign-out too, so it never clears the id. `useIdentify(session?.user.id ?? null)` clears the id while the session loads, so the first page view has no user. Each auth library marks loading its own way:
+
+| Library | Hook | Value |
+| --- | --- | --- |
+| Better Auth | `const { data, isPending } = useSession()` | `isPending ? undefined : (data?.user.id ?? null)` |
+| Auth.js (NextAuth) | `const { data, status } = useSession()` | `status === "loading" ? undefined : (data?.user?.id ?? null)` |
+| Clerk | `const { user, isLoaded } = useUser()` | `isLoaded ? (user?.id ?? null) : undefined` |
+
+Without React, call `identify()` from `highseat` after each sign-in and sign-out.
 
 ## Revenue attribution
 

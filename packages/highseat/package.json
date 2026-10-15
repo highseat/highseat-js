@@ -50,6 +50,7 @@
   "scripts": {
     "build": "tsdown && kodeks prepare-package",
     "check-exports": "node scripts/check-exports.ts",
+    "check-next": "node scripts/check-next.ts",
     "check-types": "tsc --noEmit && tsc --noEmit -p tsconfig.strict.json",
     "test:bun": "bun test",
     "test:node": "vitest run --project node",

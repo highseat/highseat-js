@@ -1,0 +1,19 @@
+{
+  "name": "highseat-next-fixture",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "next build"
+  },
+  "dependencies": {
+    "highseat": "file:./highseat.tgz",
+    "next": "^16.0.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.2.18",
+    "typescript": "^5.9.0"
+  }
+}

@@ -26,6 +26,10 @@ const ALLOWED_IMPORTS: Record<string, string[]> = {
 // renders them on the client.
 const CLIENT_ENTRIES = new Set(["./react"])
 
+// The server entries that render a client component, and the client file they must import it
+// from. Importing the component from any other built file skips its "use client" boundary.
+const CLIENT_IMPORTS: Record<string, string> = { "./next": "./react.js" }
+
 // The built files keep the JSDoc, whose usage examples import from the package itself.
 const BLOCK_COMMENT_PATTERN = /\/\*[\s\S]*?\*\//g
 
@@ -101,13 +105,19 @@ for (const [subpath, conditions] of Object.entries(manifest.exports)) {
   }
 
   const file = path.join(DIST, conditions.default)
+  const source = readFileSync(file, "utf8")
 
   for (const specifier of collectImports(file)) {
     if (!allowed.includes(specifier)) failures.push(`${subpath}: imports "${specifier}"`)
   }
 
-  if (CLIENT_ENTRIES.has(subpath) && !readFileSync(file, "utf8").startsWith('"use client"')) {
+  if (CLIENT_ENTRIES.has(subpath) && !source.startsWith('"use client"')) {
     failures.push(`${subpath}: lost its "use client" directive`)
+  }
+
+  const clientImport = CLIENT_IMPORTS[subpath]
+  if (clientImport && !source.includes(`from "${clientImport}"`)) {
+    failures.push(`${subpath}: does not import its client component from ${clientImport}`)
   }
 
   for (const loader of ["import", "require"] as const) {

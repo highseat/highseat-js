@@ -1,5 +1,15 @@
 # highseat
 
+## 0.3.0
+
+### Minor Changes
+
+- Add a `debug` option to `<Highseat />` and `inject()`. When it is on, every `track()` and `identify()` call is logged to the console, with whether it went to the tracker or waits in the queue for it, and the page warns once when it has no tracker script or the script failed to load. It is on by default when `process.env.NODE_ENV` is `development`, so a production build logs nothing. Pass `debug={false}` to turn it off.
+
+### Patch Changes
+
+- `<Highseat />` from `highseat/next` crashed `next build` in 0.2.0 with `useEffect is not a function`; it renders again, and `useIdentify` is safe to import from `highseat/next`.
+
 ## 0.2.0
 
 ### Minor Changes

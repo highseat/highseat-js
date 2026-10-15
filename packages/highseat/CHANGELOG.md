@@ -1,5 +1,11 @@
 # highseat
 
+## 0.2.0
+
+### Minor Changes
+
+- Identify the signed-in user without writing your own component. `<Highseat />` from `highseat/react` and `highseat/next` takes a `userId` prop, and `useIdentify(userId)` from either entry point does the same from any client component, such as one that reads a `useSession()` hook. Pass your own user id while signed in, `null` once signed out, and `undefined` while the session loads. The package calls `identify()` once per new value, also under React Strict Mode. A sign-out or an expired session turns the value into `null`, which clears the id. The README shows the value for Better Auth, Auth.js and Clerk, each of which marks a loading session its own way. The value is your own user id, never an email or other personal data.
+
 ## 0.1.0
 
 ### Minor Changes

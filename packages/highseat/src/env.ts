@@ -37,3 +37,15 @@ export function isNextBuild(): boolean {
   if (typeof process === "undefined") return false
   return process.env.NEXT_PHASE === "phase-production-build"
 }
+
+/**
+ * Whether the build runs in development. A bundler replaces `process.env.NODE_ENV` with a
+ * literal. A browser without that replacement has no `process`, so the read throws.
+ */
+export function isDevelopment(): boolean {
+  try {
+    return process.env.NODE_ENV === "development"
+  } catch {
+    return false
+  }
+}

@@ -62,6 +62,12 @@ import { Highseat } from "highseat/react"
 
 Without React, `inject({ site })` from `highseat` adds the same script tag.
 
+## Debugging
+
+In development, the package logs every `track()` and `identify()` call to the console, with its properties or id, and says whether the call went to the tracker or waits in the queue for it to load. It also warns once per page when nothing can reach Highseat: the page has no tracker script, or the script failed to load, as one an ad blocker stopped does.
+
+Logging is on when `process.env.NODE_ENV` is `development`, so a production build logs nothing. Pass `debug={false}` to `<Highseat />` to turn it off, or `debug` to turn it on in any build. `inject({ site, debug })` takes the same option.
+
 ## Events
 
 ```ts

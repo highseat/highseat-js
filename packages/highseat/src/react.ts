@@ -49,11 +49,12 @@ export function Highseat({
   outbound,
   downloads,
   hashRouting,
+  debug,
   userId,
 }: HighseatProps): null {
   useEffect(() => {
-    inject({ site, src, outbound, downloads, hashRouting })
-  }, [site, src, outbound, downloads, hashRouting])
+    inject({ site, src, outbound, downloads, hashRouting, debug })
+  }, [site, src, outbound, downloads, hashRouting, debug])
 
   useIdentify(userId)
 

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "vitest"
+import { afterEach, describe, expect, test, vi } from "vitest"
 import { getAttributionId, identify, inject, SCRIPT_URL, track } from "./index"
 
 type ErrorListener = (event: { currentTarget: FakeScript }) => void
@@ -41,9 +41,18 @@ function createDocument(scripts: FakeScript[] = []) {
   }
 }
 
+// `wait(0)` waits out the microtask a debug log is decided in.
+function wait(milliseconds: number) {
+  return new Promise(resolve => setTimeout(resolve, milliseconds))
+}
+
 afterEach(() => {
+  // Clears the `debug` option a test passed to `inject`.
+  host.document = createDocument()
+  inject({ site: "site_reset" })
   delete host.window
   delete host.document
+  vi.restoreAllMocks()
 })
 
 describe("track and identify", () => {
@@ -94,6 +103,112 @@ describe("track and identify", () => {
   test("do nothing on a server", () => {
     expect(() => identify("user_1")).not.toThrow()
     expect(() => track("404")).not.toThrow()
+  })
+})
+
+describe("debug", () => {
+  test("logs each call and whether it was queued or sent", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {})
+    host.window = {}
+    host.document = createDocument([createScript({ site: "site_1" })])
+    inject({ site: "site_1", debug: true })
+
+    track("signup", { plan: "pro" })
+    identify("user_1")
+    host.window.highseat = { track: () => {}, [LIVE]: true }
+    track("login")
+    await wait(0)
+
+    expect(info.mock.calls).toEqual([
+      ['highseat: track "signup", queued until the tracker loads', { plan: "pro" }],
+      ['highseat: identify "user_1", queued until the tracker loads'],
+      ['highseat: track "login", sent to the tracker'],
+    ])
+  })
+
+  test("logs nothing when turned off, even for calls made before inject", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {})
+    host.window = {}
+    host.document = createDocument()
+
+    // A child component's effect runs before the effect of the `<Highseat />` around it.
+    track("video_played")
+    inject({ site: "site_1", debug: false })
+    await wait(0)
+
+    expect(info).not.toHaveBeenCalled()
+  })
+
+  test("logs by default in development", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {})
+    const { env } = process
+    process.env = { ...env, NODE_ENV: "development" }
+    host.window = { highseat: { track: () => {}, [LIVE]: true } }
+
+    try {
+      track("video_played")
+      await wait(0)
+    } finally {
+      process.env = env
+    }
+
+    expect(info.mock.calls).toEqual([['highseat: track "video_played", sent to the tracker']])
+  })
+
+  test("logs nothing by default outside development", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {})
+    host.window = {}
+
+    track("video_played")
+    await wait(0)
+
+    expect(info).not.toHaveBeenCalled()
+  })
+
+  test("warns once when the tracker script fails to load", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+    vi.spyOn(console, "info").mockImplementation(() => {})
+    const scripts: FakeScript[] = []
+    host.window = {}
+    host.document = createDocument(scripts)
+    inject({ site: "site_1", debug: true })
+
+    scripts[0]?.fail()
+    track("video_played")
+    track("login")
+    await wait(200)
+
+    expect(warn.mock.calls).toEqual([[expect.stringContaining("failed to load")]])
+  })
+
+  test("warns once when the page has no tracker script", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+    vi.spyOn(console, "info").mockImplementation(() => {})
+    host.window = {}
+    host.document = createDocument()
+    inject({ site: "site_1", debug: true })
+    // Another tool's snippet, which carries a `data-site` of its own.
+    host.document = createDocument([createScript({ site: "ABCDEFGH" })])
+
+    track("video_played")
+    track("login")
+    await wait(3200)
+
+    expect(warn.mock.calls).toEqual([[expect.stringContaining("no tracker script")]])
+  })
+
+  test("stays quiet once the tracker has loaded", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+    vi.spyOn(console, "info").mockImplementation(() => {})
+    host.window = {}
+    host.document = createDocument()
+    inject({ site: "site_1", debug: true })
+
+    host.window.highseat = { track: () => {}, [LIVE]: true }
+    track("video_played")
+    await wait(200)
+
+    expect(warn).not.toHaveBeenCalled()
   })
 })
 

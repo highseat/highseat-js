@@ -1,3 +1,5 @@
+import { isDevelopment } from "./env"
+
 /**
  * The browser client. Every call goes to the hosted tracker on `window.highseat`; before the
  * tracker has loaded, calls wait in a queue the tracker drains on startup. Nothing here throws:
@@ -150,6 +152,12 @@ export interface InjectOptions {
   downloads?: boolean
   /** Counts a change of `#/route` as a page view, for an app that routes by hash. */
   hashRouting?: boolean
+  /**
+   * Logs every `track()` and `identify()` call to the console, and warns once when no tracker
+   * script is on the page or the script failed to load. Defaults to `true` when
+   * `process.env.NODE_ENV` is `development`, so a production build logs nothing.
+   */
+  debug?: boolean
 }
 
 declare global {
@@ -169,14 +177,32 @@ const SCRIPT_HOST = new URL(SCRIPT_URL).host
 // A site's proxy path: `/` and ten hex characters.
 const PROXY_PATH = /^\/[0-9a-f]{10}$/
 
-const ATTRIBUTION_TIMEOUT = 3000
-const ATTRIBUTION_POLL_INTERVAL = 50
+const TRACKER_TIMEOUT = 3000
+const TRACKER_POLL_INTERVAL = 50
+
+const MISSING_SCRIPT_WARNING = [
+  "highseat: no tracker script on this page, so no event reaches Highseat.",
+  "Render <Highseat />, call inject({ site }), or add the script tag from the site's Installation settings.",
+].join(" ")
+const FAILED_SCRIPT_WARNING = [
+  "highseat: the tracker script failed to load, so no event reaches Highseat.",
+  "An ad blocker may have stopped it: load the tracker from the site's proxy path instead.",
+].join(" ")
+const SLOW_SCRIPT_WARNING = [
+  `highseat: the tracker script has not loaded after ${TRACKER_TIMEOUT / 1000} seconds,`,
+  "so every call waits in the queue. Check the network panel for a blocked or failed request.",
+].join(" ")
 
 // The script tags `inject` added, and every tracker script whose request failed, such as one an
 // ad blocker stopped. A browser keeps no record of a failed script, so a failure is only known
 // to a listener attached before it happened.
 const injectedScripts = new WeakSet<HTMLScriptElement>()
 const failedScripts = new WeakSet<HTMLScriptElement>()
+
+// The `debug` option of the last `inject` call. Unset falls back to the build's environment.
+let debugOption: boolean | undefined
+// The windows whose tracker is being watched, so a page warns about its script once.
+const watchedWindows = new WeakSet<Window>()
 
 function findGlobal(): HighseatGlobal | undefined {
   if (typeof window === "undefined") return
@@ -211,8 +237,67 @@ function isTrackerScript(script: HTMLScriptElement) {
   }
 }
 
+/** The page's tracker scripts, each one listened to from now on for a failed load. */
 function findTrackerScripts() {
-  return Array.from(document.scripts).filter(isTrackerScript)
+  const scripts = Array.from(document.scripts).filter(isTrackerScript)
+  for (const script of scripts) script.addEventListener("error", markFailed)
+  return scripts
+}
+
+function isDebug() {
+  return debugOption ?? isDevelopment()
+}
+
+/**
+ * Warns once per page when the tracker cannot arrive: no tracker script, or only failed ones. A
+ * missing script is judged at the timeout, because `<Highseat />` adds its tag in an effect that
+ * runs after the effects of the components inside it.
+ */
+function watchTracker() {
+  if (typeof window === "undefined" || typeof document === "undefined") return
+  if (watchedWindows.has(window)) return
+  watchedWindows.add(window)
+
+  const page = window
+  const deadline = Date.now() + TRACKER_TIMEOUT
+
+  function check() {
+    // A replaced global window, as a test sets up for each case, is another page.
+    if (window !== page || isLive(page.highseat)) return
+
+    const scripts = findTrackerScripts()
+
+    if (scripts.length > 0 && scripts.every(script => failedScripts.has(script))) {
+      console.warn(FAILED_SCRIPT_WARNING)
+      return
+    }
+    if (Date.now() < deadline) {
+      setTimeout(check, TRACKER_POLL_INTERVAL)
+      return
+    }
+    console.warn(scripts.length === 0 ? MISSING_SCRIPT_WARNING : SLOW_SCRIPT_WARNING)
+  }
+
+  setTimeout(check, TRACKER_POLL_INTERVAL)
+}
+
+/**
+ * Logs a call when debugging is on. The check waits a microtask, so a `debug` option that
+ * `<Highseat />` passes in its effect applies to the calls its children make in theirs.
+ */
+function logCall(method: "track" | "identify", args: unknown[], isQueued: boolean) {
+  queueMicrotask(() => {
+    if (!isDebug()) return
+
+    const status = isQueued ? "queued until the tracker loads" : "sent to the tracker"
+    const [value, properties] = args
+    // `JSON.stringify` quotes a name or a string id, and returns `undefined` for an unset id.
+    const message = `highseat: ${method} ${String(JSON.stringify(value))}, ${status}`
+
+    if (properties === undefined) console.info(message)
+    else console.info(message, properties)
+    watchTracker()
+  })
 }
 
 function call(method: "track" | "identify", args: unknown[]) {
@@ -223,9 +308,11 @@ function call(method: "track" | "identify", args: unknown[]) {
   if (typeof handler !== "function") {
     api.q ??= []
     api.q.push([method, args])
+    logCall(method, args, true)
     return
   }
 
+  logCall(method, args, false)
   try {
     handler(...args)
   } catch {}
@@ -262,18 +349,17 @@ export async function getAttributionId(
 ): Promise<string | undefined> {
   if (typeof window === "undefined" || typeof document === "undefined") return
 
-  const deadline = Date.now() + (options.timeout ?? ATTRIBUTION_TIMEOUT)
+  const deadline = Date.now() + (options.timeout ?? TRACKER_TIMEOUT)
   let api = window.highseat
 
   while (!isLive(api)) {
     if (Date.now() >= deadline) return
 
     const scripts = findTrackerScripts()
-    for (const script of scripts) script.addEventListener("error", markFailed)
     // No tracker script at all, or only failed ones: the tracker cannot arrive.
     if (scripts.every(script => failedScripts.has(script))) return
 
-    await new Promise(resolve => setTimeout(resolve, ATTRIBUTION_POLL_INTERVAL))
+    await new Promise(resolve => setTimeout(resolve, TRACKER_POLL_INTERVAL))
     api = window.highseat
   }
 
@@ -286,12 +372,15 @@ export async function getAttributionId(
 
 /**
  * Adds the tracker's script tag to the page, once. A second call for the same site, such as a
- * component mounting again, finds the tag and does nothing. Does nothing on a server.
+ * component mounting again, finds the tag and adds nothing, but its `debug` option still applies.
+ * Does nothing on a server.
  */
 export function inject(options: InjectOptions): void {
   if (typeof document === "undefined") return
 
-  const { site, src = SCRIPT_URL, outbound, downloads, hashRouting } = options
+  const { site, src = SCRIPT_URL, outbound, downloads, hashRouting, debug } = options
+  debugOption = debug
+  if (isDebug()) watchTracker()
   if (Array.from(document.scripts).some(script => script.dataset.site === site)) return
 
   const script = document.createElement("script")

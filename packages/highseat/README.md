@@ -23,14 +23,7 @@ The package loads the tracker from Highseat, or from your site's proxy path, rat
 
 ## Next.js
 
-Set the site id from your site's Installation settings, and the proxy path for first-party delivery:
-
-```bash
-NEXT_PUBLIC_HIGHSEAT_SITE=site_…
-HIGHSEAT_PATH=/3f9a0c1e2b
-```
-
-Then render `<Highseat />` once, in the root layout:
+Render `<Highseat />` once, in the root layout, with the site id from your site's Installation settings:
 
 ```tsx
 // app/layout.tsx
@@ -41,41 +34,65 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <body>
         {children}
-        <Highseat />
+        <Highseat site="site_…" />
       </body>
     </html>
   )
 }
 ```
 
-Without `HIGHSEAT_PATH`, `<Highseat />` loads the tracker from Highseat's host. The tracker counts each client-side navigation as one page view on its own.
+To keep the site id out of the code, leave `site` out and set it for the build, with the proxy path for first-party delivery:
+
+```bash
+NEXT_PUBLIC_HIGHSEAT_SITE=site_…
+HIGHSEAT_PATH=/3f9a0c1e2b
+```
+
+Without `HIGHSEAT_PATH`, `<Highseat />` loads the tracker from Highseat's host. The tracker counts each client-side navigation as one page view on its own. With the Pages Router, render it in `pages/_app.tsx` instead.
 
 ## React
 
-Render `<Highseat />` once, beside your root component. With Vite, the site id comes from `VITE_HIGHSEAT_SITE`; with another bundler, read it from that bundler's public variable.
+Render `<Highseat />` once, beside your root component:
 
 ```tsx
 import { Highseat } from "highseat/react"
 
-<Highseat site={import.meta.env.VITE_HIGHSEAT_SITE} />
+<Highseat site="site_…" />
 ```
 
-`src` takes the site's proxy path (`/3f9a0c1e2b`) for first-party delivery. `outbound={false}` and `downloads={false}` turn off the automatic link and download events, and `hashRouting` counts `#/route` changes as page views.
+With Vite, `site={import.meta.env.VITE_HIGHSEAT_SITE}` reads the site id from the environment instead; with another bundler, read it from that bundler's public variable. `src` takes the site's proxy path (`/3f9a0c1e2b`) for first-party delivery. `outbound={false}` and `downloads={false}` turn off the automatic link and download events, and `hashRouting` counts `#/route` changes as page views.
 
 Without React, `inject({ site })` from `highseat` adds the same script tag.
 
 ## TanStack Start
 
-Render `<Highseat />` once, inside `<body>` in the root route's component, with the site id in `VITE_HIGHSEAT_SITE`:
+Render `<Highseat />` once, inside `<body>` in the root route's component:
 
 ```tsx
 // src/routes/__root.tsx
 import { Highseat } from "highseat/react"
 
-<Highseat site={import.meta.env.VITE_HIGHSEAT_SITE} />
+<Highseat site="site_…" />
 ```
 
 To serve the tracker from your own domain, see TanStack Start under [First-party proxy](#first-party-proxy).
+
+## Astro
+
+Add the tracker's tag to the `<head>` of your layout. `is:inline` keeps Astro from bundling it, so the tracker starts before any page script:
+
+```astro
+<!-- src/layouts/Layout.astro -->
+<script is:inline defer src="https://cdn.highseat.com/script.js" data-site="site_…"></script>
+```
+
+## Any other site
+
+A site without a bundler, or a website builder such as Webflow or Shopify, needs no package. Add the tag to the `<head>` of every page, in the builder's head code field:
+
+```html
+<script defer src="https://cdn.highseat.com/script.js" data-site="site_…"></script>
+```
 
 ## Debugging
 
@@ -170,7 +187,11 @@ HIGHSEAT_SECRET=hs_secret_...    # the site secret
 
 A missing variable never stops the site. Without the secret, or without the path on a handler with a `fallback`, `createProxy()` warns once and turns the proxy off: with a `fallback`, every request goes to it, and without one the proxy path answers `503` with a JSON `error` naming the variable. A local server without the variables therefore still starts and serves the site.
 
-Then load the tracker from the path. In Next.js, `<Highseat />` reads `HIGHSEAT_PATH` itself. Elsewhere, pass `src="/3f9a0c1e2b"` to `<Highseat />` or `inject()`, or use the script tag from Installation settings.
+Then load the tracker from the path. In Next.js, `<Highseat />` reads `HIGHSEAT_PATH` itself. Elsewhere, pass `src="/3f9a0c1e2b"` to `<Highseat />` or `inject()`, or load it with a script tag in the `<head>` of every page:
+
+```html
+<script defer src="/3f9a0c1e2b" data-site="site_…"></script>
+```
 
 To rotate the path, rotate it in Installation settings, update `HIGHSEAT_PATH` and the snippet, and redeploy. On a host whose route is a file or a config entry (Netlify, Vercel without Next.js, Astro), move that route too.
 
@@ -204,6 +225,24 @@ import { withHighseat } from "highseat/next"
 export default withHighseat({
   // Your own config.
 })
+```
+
+Then render `<Highseat />` in the root layout without `site` or `src`, in place of whatever loads the tracker now. It reads the site id from `NEXT_PUBLIC_HIGHSEAT_SITE` and the path from `HIGHSEAT_PATH`, and a `src` prop would outrank the path:
+
+```tsx
+// app/layout.tsx
+import { Highseat } from "highseat/next"
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="en">
+      <body>
+        {children}
+        <Highseat />
+      </body>
+    </html>
+  )
+}
 ```
 
 Next.js loads `next.config.ts` with `require`, and the package is ES modules only, so the config needs Node 20.19 or 22.12 and later, the versions that `require` an ES module without a flag.
@@ -358,7 +397,14 @@ export const ALL: APIRoute = ({ request, clientAddress }) =>
   createProxy({ clientIp: () => clientAddress })(request)
 ```
 
-Needs a server adapter. The file name carries the path, so set only `HIGHSEAT_SECRET`. On the Cloudflare adapter, pass `secret: locals.runtime.env.HIGHSEAT_SECRET`.
+Then load the tracker from the path in your layout:
+
+```astro
+<!-- src/layouts/Layout.astro -->
+<script is:inline defer src="/3f9a0c1e2b" data-site={import.meta.env.PUBLIC_HIGHSEAT_SITE}></script>
+```
+
+Needs a server adapter. The file name carries the path, so set only `HIGHSEAT_SECRET`, and `PUBLIC_HIGHSEAT_SITE` for the site id. On the Cloudflare adapter, pass `secret: locals.runtime.env.HIGHSEAT_SECRET`. `clientAddress` is the address that connected, so behind a proxied Cloudflare record, use `"cloudflare"` instead.
 
 ### Hono
 

@@ -52,15 +52,30 @@ Without `HIGHSEAT_PATH`, `<Highseat />` loads the tracker from Highseat's host. 
 
 ## React
 
+Render `<Highseat />` once, beside your root component. With Vite, the site id comes from `VITE_HIGHSEAT_SITE`; with another bundler, read it from that bundler's public variable.
+
 ```tsx
 import { Highseat } from "highseat/react"
 
-<Highseat site="site_…" />
+<Highseat site={import.meta.env.VITE_HIGHSEAT_SITE} />
 ```
 
 `src` takes the site's proxy path (`/3f9a0c1e2b`) for first-party delivery. `outbound={false}` and `downloads={false}` turn off the automatic link and download events, and `hashRouting` counts `#/route` changes as page views.
 
 Without React, `inject({ site })` from `highseat` adds the same script tag.
+
+## TanStack Start
+
+Render `<Highseat />` once, inside `<body>` in the root route's component, with the site id in `VITE_HIGHSEAT_SITE`:
+
+```tsx
+// src/routes/__root.tsx
+import { Highseat } from "highseat/react"
+
+<Highseat site={import.meta.env.VITE_HIGHSEAT_SITE} />
+```
+
+To serve the tracker from your own domain, see TanStack Start under [First-party proxy](#first-party-proxy).
 
 ## Debugging
 
@@ -290,7 +305,14 @@ export const onRequest: PagesFunction<Env> = ({ request, env, next }) => {
 }
 ```
 
-The function sees each one-segment path, and `next` serves your site for every path but the proxy's. Add both variables in the Pages project's settings.
+```json
+// public/_routes.json
+{ "version": 1, "include": ["/3f9a0c1e2b"], "exclude": [] }
+```
+
+`_routes.json` runs the function on the proxy path alone, so every page stays a static asset; without it the function runs on every one-segment path, and `next` serves your site for each one but the proxy's. Put it in the folder your build copies to its output as is, such as `public/`. Add both variables in the Pages project's settings.
+
+Pages ignores `functions/` when the build ships a `_worker.js`, as the Astro, SvelteKit and Remix adapters do, and the proxy path then answers with your site's 404. Remove the adapter from a static site, or use the adapter's own endpoint instead.
 
 ### Netlify
 

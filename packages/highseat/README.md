@@ -322,6 +322,8 @@ export default {
 
 Route the Worker on `yoursite.com/*`: `fallback: fetch` passes every other request on to your origin. Set the secret with `wrangler secret put HIGHSEAT_SECRET`.
 
+A Worker that serves the site's static assets has no origin: pass `fallback: request => env.ASSETS.fetch(request)`, and leave `not_found_handling` out of your Wrangler config. With `not_found_handling` set, the assets answer every path that has no file, the proxy path included, so list the path in `run_worker_first`.
+
 ### Cloudflare Pages
 
 ```ts

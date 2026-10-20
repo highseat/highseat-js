@@ -17,7 +17,8 @@ The one public npm package. Everything else in this monorepo is private and unve
 
 - `src/<module>.test.ts` imports from `vitest`. The same files run on three runtimes: `bun run test:node`, `bun run test:bun` (Bun reads the `vitest` imports natively) and `bun run test:workerd` (inside workerd through Miniflare). CI runs all three; a green Node run says nothing about a Worker.
 - Type-level tests live in `src/<module>.test-d.ts`, importing from `highseat` as a customer would. Each `@ts-expect-error` names the mistake it pins. `bun run check-types` runs them, and an expected error that stops occurring fails it.
-- Augmenting `Register` changes every file in the same program, so the strict-mode tests sit in `src/index.strict.test-d.ts` and compile alone through `tsconfig.strict.json`, which `check-types` runs second.
+- Augmenting `Register` changes every file in the same program, so the strict-mode tests sit in `src/*.strict.test-d.ts(x)` and compile apart through `tsconfig.strict.json`, which `check-types` runs second.
+- **The docs show the strict tests' code.** `scripts/docs-snippets.ts` reads the `Register` block of `index.strict.test-d.ts` and the tracked link in `react.strict.test-d.tsx` into the Track events page, so the docs' examples compile. Run `bun run docs:snippets` after editing either file.
 
 ## Releasing
 

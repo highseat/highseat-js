@@ -17,5 +17,5 @@
     "verbatimModuleSyntax": true
   },
   "include": ["src", "scripts", "*.config.ts"],
-  "exclude": ["src/index.strict.test-d.ts"]
+  "exclude": ["src/*.strict.test-d.ts", "src/*.strict.test-d.tsx"]
 }

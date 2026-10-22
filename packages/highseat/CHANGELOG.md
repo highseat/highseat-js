@@ -1,5 +1,11 @@
 # highseat
 
+## 0.3.1
+
+### Patch Changes
+
+- `withHighseat()` now writes the build's `HIGHSEAT_PATH` into the app's code, so `<Highseat />` in the App Router loads the tracker from the path the build rewrote. A server started without `HIGHSEAT_PATH`, such as the runtime stage of a Docker image that took the path as a build argument, used to load the tracker from Highseat's host instead. Set `HIGHSEAT_PATH` for the build. The running server needs only `HIGHSEAT_SECRET`.
+
 ## 0.3.0
 
 ### Minor Changes

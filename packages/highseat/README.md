@@ -247,7 +247,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
 Next.js loads `next.config.ts` with `require`, and the package is ES modules only, so the config needs Node 20.19 or 22.12 and later, the versions that `require` an ES module without a flag.
 
-`withHighseat()` rewrites `HIGHSEAT_PATH` to the route handler inside the app, so the visitor's IP survives and the route file never moves. Pass `{ route: "/stats" }` for a handler elsewhere. Without `HIGHSEAT_PATH`, `next dev` and `next build` warn once and leave the rewrite out, and `next typegen` runs as usual. Set the variable for the build as well as the server: the rewrite is written at build time. Off Vercel, the outermost proxy that sets the header decides the preset: `"cloudflare"` behind a proxied Cloudflare record, even with nginx or Traefik in between, and `"nginx"` behind nginx alone.
+`withHighseat()` rewrites `HIGHSEAT_PATH` to the route handler inside the app, so the visitor's IP survives and the route file never moves. Pass `{ route: "/stats" }` for a handler elsewhere. Without `HIGHSEAT_PATH`, `next dev` and `next build` warn once and leave the rewrite out, and `next typegen` runs as usual. Set the variable for the build, as a build argument in a Docker build. `withHighseat()` writes the build's value into the rewrite and into the bundled code of `<Highseat />` and `createProxy()`, so the running App Router server needs only `HIGHSEAT_SECRET`. Off Vercel, the outermost proxy that sets the header decides the preset: `"cloudflare"` behind a proxied Cloudflare record, even with nginx or Traefik in between, and `"nginx"` behind nginx alone.
 
 ### TanStack Start
 

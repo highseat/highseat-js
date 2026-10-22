@@ -44,6 +44,7 @@ interface RewritePhases {
 /** The part of a Next.js config `withHighseat` reads. */
 interface NextConfigWithRewrites {
   rewrites?: () => Promise<Rewrite[] | RewritePhases>
+  env?: Record<string, string | undefined>
 }
 
 /** A Next.js config with the proxy's rewrite added, or its own rewrites when there is no path. */
@@ -77,8 +78,10 @@ let hasWarnedNoPath = false
  *
  * The proxy is optional. Without a path, `next dev` and `next build` warn once and leave the
  * rewrite out, and `<Highseat />` loads the tracker from Highseat's host. Nothing here throws,
- * so `next typegen` runs without the variable too. The build writes the rewrite, so a path set
- * only at runtime points a dynamically rendered `<Highseat />` at a route that is not there.
+ * so `next typegen` runs without the variable too. With a path, it also sets `HIGHSEAT_PATH` in
+ * the config's `env`, so Next.js writes the build's value into the bundled code of `<Highseat />`
+ * and `createProxy()`. In the App Router, the script and the rewrite then agree, whatever the
+ * server's environment.
  *
  * ```ts
  * // next.config.ts
@@ -92,8 +95,8 @@ export function withHighseat<Config extends object>(
 ): WithHighseatConfig<Config> {
   const path = findProxyPath(options.path)
 
-  // Typed loosely so any Next.js version's config fits; only `rewrites` is read.
-  const { rewrites: ownRewrites } = config as NextConfigWithRewrites
+  // Typed loosely so any Next.js version's config fits; only `rewrites` and `env` are read.
+  const { rewrites: ownRewrites, env } = config as NextConfigWithRewrites
 
   async function passRewritesThrough(): Promise<Rewrite[] | RewritePhases> {
     if (!hasWarnedNoPath) {
@@ -117,5 +120,5 @@ export function withHighseat<Config extends object>(
     return { ...existing, beforeFiles: [rewrite, ...(existing.beforeFiles ?? [])] }
   }
 
-  return { ...config, rewrites }
+  return { ...config, env: { ...env, HIGHSEAT_PATH: path }, rewrites }
 }

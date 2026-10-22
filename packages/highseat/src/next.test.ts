@@ -57,6 +57,19 @@ describe("withHighseat", () => {
     })
   })
 
+  test("sets HIGHSEAT_PATH in the config's env, beside the app's own", () => {
+    const config = withHighseat({ env: { OWN: "kept" } }, { path: "3f9a0c1e2b" })
+
+    expect(config.env).toEqual({ OWN: "kept", HIGHSEAT_PATH: PATH })
+  })
+
+  test("leaves the config's env alone without a path", () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {})
+    const env = { OWN: "kept" }
+
+    expect(withHighseat({ env }, { path: "" }).env).toBe(env)
+  })
+
   test("keeps the rest of the config", () => {
     expect(withHighseat({ reactStrictMode: true }, { path: PATH }).reactStrictMode).toBe(true)
   })

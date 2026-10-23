@@ -238,7 +238,7 @@ function isTrackerScript(script: HTMLScriptElement) {
 }
 
 /** The page's tracker scripts, each one listened to from now on for a failed load. */
-function findTrackerScripts() {
+function getTrackerScripts() {
   const scripts = Array.from(document.scripts).filter(isTrackerScript)
   for (const script of scripts) script.addEventListener("error", markFailed)
   return scripts
@@ -265,7 +265,7 @@ function watchTracker() {
     // A replaced global window, as a test sets up for each case, is another page.
     if (window !== page || isLive(page.highseat)) return
 
-    const scripts = findTrackerScripts()
+    const scripts = getTrackerScripts()
 
     if (scripts.length > 0 && scripts.every(script => failedScripts.has(script))) {
       console.warn(FAILED_SCRIPT_WARNING)
@@ -355,7 +355,7 @@ export async function getAttributionId(
   while (!isLive(api)) {
     if (Date.now() >= deadline) return
 
-    const scripts = findTrackerScripts()
+    const scripts = getTrackerScripts()
     // No tracker script at all, or only failed ones: the tracker cannot arrive.
     if (scripts.every(script => failedScripts.has(script))) return
 

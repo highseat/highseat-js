@@ -3,10 +3,15 @@ import { findNextSite, findProxyPath } from "./env"
 import { Highseat as ReactHighseat, type HighseatProps as ReactHighseatProps } from "./react"
 
 export { createProxy } from "./proxy"
-export { useIdentify } from "./react"
+export { useBeforeSend, useIdentify } from "./react"
 export type { ClientIp, ClientIpPreset, ProxyHandler, ProxyOptions } from "./proxy"
 
-export interface HighseatProps extends Partial<ReactHighseatProps> {}
+/**
+ * The props of `<Highseat />` in a server layout. `beforeSend` is left out: a server component
+ * cannot pass a function to the browser, so the hook is set with {@link useBeforeSend} in a client
+ * component instead.
+ */
+export interface HighseatProps extends Partial<Omit<ReactHighseatProps, "beforeSend">> {}
 
 /**
  * Loads the Highseat tracker in a Next.js app. Render it once, in the root layout. The site id
@@ -14,7 +19,7 @@ export interface HighseatProps extends Partial<ReactHighseatProps> {}
  * `HIGHSEAT_PATH` when one is set. `HIGHSEAT_PATH` is a server variable, so in the Pages Router,
  * where the layout also renders in the browser, pass `src` instead. A prop wins over its variable.
  * `userId` takes an id the server already knows. For a session read in the browser, call
- * `useIdentify` in a client component instead.
+ * `useIdentify` in a client component instead, and set a `beforeSend` hook with `useBeforeSend`.
  */
 export function Highseat(props: HighseatProps): ReactElement | null {
   const site = props.site ?? findNextSite()

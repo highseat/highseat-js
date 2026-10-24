@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
-import { getAttributionId, identify, inject, SCRIPT_URL, track } from "./index"
+import {
+  getAttributionId,
+  identify,
+  inject,
+  SCRIPT_URL,
+  setBeforeSend,
+  track,
+  type BeforeSendEvent,
+} from "./index"
 
 type ErrorListener = (event: { currentTarget: FakeScript }) => void
 
@@ -349,5 +357,54 @@ describe("inject", () => {
 
   test("does nothing on a server", () => {
     expect(() => inject({ site: "site_1" })).not.toThrow()
+  })
+
+  test("sets the beforeSend hook before it adds the script", () => {
+    const scripts: FakeScript[] = []
+    let hookAtAppend: unknown
+    host.window = {}
+    host.document = {
+      ...createDocument(scripts),
+      head: {
+        append: (script: FakeScript) => {
+          hookAtAppend = host.window?.highseat?.beforeSend
+          scripts.push(script)
+        },
+      },
+    }
+
+    inject({ site: "site_1", beforeSend: dropAdmin })
+
+    expect(hookAtAppend).toBe(dropAdmin)
+  })
+})
+
+function dropAdmin(event: BeforeSendEvent) {
+  return event.url.includes("/admin/") ? null : event
+}
+
+describe("setBeforeSend", () => {
+  test("sets the hook on the stub, for the tracker to pick up when it loads", () => {
+    host.window = {}
+
+    setBeforeSend(dropAdmin)
+
+    expect(host.window.highseat?.beforeSend).toBe(dropAdmin)
+  })
+
+  test("replaces the hook on a running tracker, and clears it with undefined", () => {
+    const tracker = { [LIVE]: true }
+    host.window = { highseat: tracker }
+
+    setBeforeSend(dropAdmin)
+    expect(host.window.highseat).toBe(tracker)
+    expect(tracker).toHaveProperty("beforeSend", dropAdmin)
+
+    setBeforeSend(undefined)
+    expect(tracker).toHaveProperty("beforeSend", undefined)
+  })
+
+  test("does nothing on a server", () => {
+    expect(() => setBeforeSend(dropAdmin)).not.toThrow()
   })
 })

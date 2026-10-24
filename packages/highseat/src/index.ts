@@ -118,6 +118,38 @@ export type TrackArgs<Name extends string> = [Name] extends [EventName]
  */
 export type UserId = string | number | null | undefined
 
+/**
+ * The part of an event {@link BeforeSend} sees and may change. The site, the visitor's user id
+ * and the attribution id are out of reach, so a hook cannot change who an event belongs to.
+ */
+export interface BeforeSendEvent {
+  /** The event's name: `pageview`, `engagement`, or a name passed to `track`. Read-only. */
+  readonly name: string
+  /** The page's full URL. The page path is read off the URL you return. */
+  url: string
+  /** The page the visitor came from, or the page left on a client-side navigation. */
+  referrer?: string
+  /** The event's properties, each value a string. */
+  properties?: Record<string, string>
+}
+
+/**
+ * Runs in the browser on every event before the tracker sends it, page views from client-side
+ * navigation included. Return the event, changed or not, or `null` to drop it. Any other falsy
+ * answer drops it too, and so does a hook that throws: a hook that keeps a secret out of the
+ * data must not leak it when it fails. The error still reaches the console.
+ *
+ * ```ts
+ * function beforeSend(event: BeforeSendEvent) {
+ *   const url = new URL(event.url)
+ *   if (url.pathname.startsWith("/admin/")) return null
+ *   url.searchParams.delete("email")
+ *   return { ...event, url: url.href }
+ * }
+ * ```
+ */
+export type BeforeSend = (event: BeforeSendEvent) => BeforeSendEvent | null
+
 /** The tracker's API on `window.highseat`, or the queue that stands in for it until it loads. */
 export interface HighseatGlobal {
   /** Records an event. */
@@ -128,6 +160,8 @@ export interface HighseatGlobal {
   getAttributionId?: () => string | undefined
   /** Calls made before the tracker loaded, drained in order when it starts. */
   q?: [string, unknown[]][]
+  /** The site's {@link BeforeSend} hook, read on every event. */
+  beforeSend?: BeforeSend
 }
 
 /** How long {@link getAttributionId} waits for the tracker. */
@@ -152,6 +186,8 @@ export interface InjectOptions {
   downloads?: boolean
   /** Counts a change of `#/route` as a page view, for an app that routes by hash. */
   hashRouting?: boolean
+  /** Changes or drops each event before it leaves the browser. See {@link BeforeSend}. */
+  beforeSend?: BeforeSend
   /**
    * Logs every `track()` and `identify()` call to the console, and warns once when no tracker
    * script is on the page or the script failed to load. Defaults to `true` when
@@ -371,6 +407,16 @@ export async function getAttributionId(
 }
 
 /**
+ * Sets the {@link BeforeSend} hook, or clears it with `undefined`. Works before the tracker has
+ * loaded, which picks the hook up when it starts, and applies from the next event once it runs.
+ * Does nothing on a server.
+ */
+export function setBeforeSend(beforeSend: BeforeSend | undefined): void {
+  const api = findGlobal()
+  if (api) api.beforeSend = beforeSend
+}
+
+/**
  * Adds the tracker's script tag to the page, once. A second call for the same site, such as a
  * component mounting again, finds the tag and adds nothing, but its `debug` option still applies.
  * Does nothing on a server.
@@ -378,8 +424,10 @@ export async function getAttributionId(
 export function inject(options: InjectOptions): void {
   if (typeof document === "undefined") return
 
-  const { site, src = SCRIPT_URL, outbound, downloads, hashRouting, debug } = options
+  const { site, src = SCRIPT_URL, outbound, downloads, hashRouting, beforeSend, debug } = options
   debugOption = debug
+  // Set before the script tag is added, so the first page view already passes through it.
+  if (beforeSend) setBeforeSend(beforeSend)
   if (isDebug()) watchTracker()
   if (Array.from(document.scripts).some(script => script.dataset.site === site)) return
 

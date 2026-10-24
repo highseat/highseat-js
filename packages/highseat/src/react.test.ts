@@ -2,8 +2,8 @@ import { Window } from "happy-dom"
 import { act, createElement, StrictMode, type ReactElement } from "react"
 import { createRoot, type Root } from "react-dom/client"
 import { afterEach, beforeEach, describe, expect, test } from "vitest"
-import type { UserId } from "./index"
-import { Highseat, useIdentify } from "./react"
+import type { BeforeSend, BeforeSendEvent, UserId } from "./index"
+import { Highseat, useBeforeSend, useIdentify } from "./react"
 
 interface Host {
   window?: unknown
@@ -13,6 +13,10 @@ interface Host {
 
 interface IdentifyProps {
   userId: UserId
+}
+
+interface RedactProps {
+  beforeSend: BeforeSend
 }
 
 const host = globalThis as unknown as Host
@@ -25,13 +29,30 @@ function Identify({ userId }: IdentifyProps) {
   return null
 }
 
+function Redact({ beforeSend }: RedactProps) {
+  useBeforeSend(beforeSend)
+  return null
+}
+
+function dropAdmin(event: BeforeSendEvent) {
+  return event.url.includes("/admin/") ? null : event
+}
+
+function keepAll(event: BeforeSendEvent) {
+  return event
+}
+
 // Renders `element` under Strict Mode, which runs every effect twice on mount.
 function render(element: ReactElement) {
   act(() => root.render(createElement(StrictMode, null, element)))
 }
 
+function findGlobal() {
+  return (page as unknown as { highseat?: { q?: unknown[]; beforeSend?: unknown } }).highseat
+}
+
 function findQueue() {
-  return (page as unknown as { highseat?: { q?: unknown[] } }).highseat?.q
+  return findGlobal()?.q
 }
 
 beforeEach(() => {
@@ -73,7 +94,35 @@ describe("useIdentify", () => {
   })
 })
 
+describe("useBeforeSend", () => {
+  test("sets the hook while mounted and clears it on unmount", () => {
+    render(createElement(Redact, { beforeSend: dropAdmin }))
+    expect(findGlobal()?.beforeSend).toBe(dropAdmin)
+
+    render(createElement(Redact, { beforeSend: keepAll }))
+    expect(findGlobal()?.beforeSend).toBe(keepAll)
+
+    act(() => root.render(null))
+    expect(findGlobal()?.beforeSend).toBeUndefined()
+  })
+
+  test("leaves a hook another component set since alone", () => {
+    render(createElement(Redact, { beforeSend: dropAdmin }))
+    const api = findGlobal()
+    if (api) api.beforeSend = keepAll
+
+    act(() => root.render(null))
+    expect(findGlobal()?.beforeSend).toBe(keepAll)
+  })
+})
+
 describe("Highseat", () => {
+  test("sets the beforeSend hook", () => {
+    render(createElement(Highseat, { site: "site_1", beforeSend: dropAdmin }))
+
+    expect(findGlobal()?.beforeSend).toBe(dropAdmin)
+  })
+
   test("loads the tracker and identifies the user", () => {
     render(createElement(Highseat, { site: "site_1", userId: "user_1" }))
     render(createElement(Highseat, { site: "site_1", userId: "user_1" }))

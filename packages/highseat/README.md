@@ -12,9 +12,9 @@ npm install highseat
 
 | Import | Contents | Needs |
 | --- | --- | --- |
-| `highseat` | `track()`, `identify()`, `getAttributionId()` and `inject()` | Nothing |
-| `highseat/react` | `<Highseat />` and `useIdentify()` | React |
-| `highseat/next` | `<Highseat />`, `useIdentify()`, `createProxy()` and `withHighseat()` for Next.js | Next.js |
+| `highseat` | `track()`, `identify()`, `getAttributionId()`, `inject()` and `setBeforeSend()` | Nothing |
+| `highseat/react` | `<Highseat />`, `useIdentify()` and `useBeforeSend()` | React |
+| `highseat/next` | `<Highseat />`, `useIdentify()`, `useBeforeSend()`, `createProxy()` and `withHighseat()` for Next.js | Next.js |
 | `highseat/proxy` | `createProxy()`, a first-party proxy for any runtime with `fetch` | Nothing |
 
 Each entry point loads on its own and imports no framework it does not name, so `highseat/proxy` runs in a Cloudflare Worker without React installed.
@@ -164,6 +164,59 @@ The value has to tell loading apart from signed out. `useIdentify(session?.user.
 | Clerk | `const { user, isLoaded } = useUser()` | `isLoaded ? (user?.id ?? null) : undefined` |
 
 Without React, call `identify()` from `highseat` after each sign-in and sign-out.
+
+## Redact or drop events
+
+A page URL can carry a secret: a password-reset token in the path, an email address in the query. A `beforeSend` hook runs in the browser on every event before the tracker sends it, page views from client-side navigation included. Return the event, changed or not, or `null` to drop it. The hook can change the URL, the referrer and the properties, and the page path follows the URL it returns. It cannot change the site or the user id.
+
+```ts
+import type { BeforeSendEvent } from "highseat"
+
+// Strips `email` from the query and templates the reset token, in the URL and the referrer.
+function redact(value: string) {
+  const url = new URL(value)
+  url.searchParams.delete("email")
+  url.pathname = url.pathname.replace(/^\/reset\/[^/]+/, "/reset/:token")
+  return url.href
+}
+
+export function beforeSend(event: BeforeSendEvent) {
+  // Drops every event on the admin pages, so an in-app navigation there sends nothing.
+  if (new URL(event.url).pathname.startsWith("/admin/")) return null
+  return { ...event, url: redact(event.url), referrer: event.referrer && redact(event.referrer) }
+}
+```
+
+A hook that throws drops the event, since sending it unchanged would leak what the hook was there to remove. The error still reaches the console. Returning nothing drops the event too.
+
+A function cannot pass from a server component to the browser, so in a Next.js App Router layout, set the hook with `useBeforeSend()` in a client component rendered beside `<Highseat />`:
+
+```tsx
+"use client"
+
+import { useBeforeSend } from "highseat/next"
+import { beforeSend } from "~/lib/analytics"
+
+export function Redact() {
+  useBeforeSend(beforeSend)
+  return null
+}
+```
+
+`highseat/react` takes the hook as a prop, `<Highseat site="site_…" beforeSend={beforeSend} />`, and `inject({ site, beforeSend })` takes it as an option. `setBeforeSend()` from `highseat` sets or clears it at any time. Each of them works before the tracker has loaded, and the first page view already passes through the hook.
+
+A site with only the script tag sets the hook on `window.highseat` in a script before the tracker's tag:
+
+```html
+<script>
+  window.highseat = {
+    beforeSend(event) {
+      return new URL(event.url).pathname.startsWith("/admin/") ? null : event
+    },
+  }
+</script>
+<script defer src="https://cdn.highseat.com/script.js" data-site="site_…"></script>
+```
 
 ## Revenue attribution
 

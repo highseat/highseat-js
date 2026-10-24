@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react"
 import { syncIdentity } from "./identity"
-import { inject, type InjectOptions, type UserId } from "./index"
+import { inject, setBeforeSend, type BeforeSend, type InjectOptions, type UserId } from "./index"
 
 export interface HighseatProps extends InjectOptions {
   /**
@@ -38,10 +38,36 @@ export function useIdentify(userId: UserId): void {
 }
 
 /**
+ * Sets the {@link BeforeSend} hook while the component is mounted, and clears it on unmount.
+ * `undefined` leaves the current hook alone. Use it in a client component when the tracker loads
+ * from a server component, such as `<Highseat />` in a Next.js App Router layout, where a
+ * function cannot be passed as a prop. Effects run before the tracker's script loads, so the
+ * first page view already passes through the hook.
+ *
+ * ```tsx
+ * "use client"
+ * export function Redact() {
+ *   useBeforeSend(event => (event.url.includes("/admin/") ? null : event))
+ *   return null
+ * }
+ * ```
+ */
+export function useBeforeSend(beforeSend: BeforeSend | undefined): void {
+  useEffect(() => {
+    if (!beforeSend) return
+    setBeforeSend(beforeSend)
+    return () => {
+      // Another component may have set its own hook since.
+      if (window.highseat?.beforeSend === beforeSend) setBeforeSend(undefined)
+    }
+  }, [beforeSend])
+}
+
+/**
  * Loads the Highseat tracker. Render it once, in the root layout. It adds the script tag after
  * the page mounts and renders nothing; mounting it again adds no second tag, and the tracker
  * counts client-side navigation on its own. With `userId`, it also identifies the visitor, as
- * {@link useIdentify} does.
+ * {@link useIdentify} does, and with `beforeSend` it sets the hook, as {@link useBeforeSend} does.
  */
 export function Highseat({
   site,
@@ -49,9 +75,13 @@ export function Highseat({
   outbound,
   downloads,
   hashRouting,
+  beforeSend,
   debug,
   userId,
 }: HighseatProps): null {
+  // Declared first, so its effect sets the hook before the next one adds the script tag.
+  useBeforeSend(beforeSend)
+
   useEffect(() => {
     inject({ site, src, outbound, downloads, hashRouting, debug })
   }, [site, src, outbound, downloads, hashRouting, debug])

@@ -1,5 +1,11 @@
 # highseat
 
+## 0.4.0
+
+### Minor Changes
+
+- Add a `beforeSend` hook that changes or drops each event in the browser before the tracker sends it, page views from client-side navigation included. Return the event with a changed URL, referrer or properties, or `null` to drop it. Set it with `useBeforeSend()` from `highseat/next` or `highseat/react`, the `beforeSend` prop of `<Highseat />` in `highseat/react`, `inject({ beforeSend })` or `setBeforeSend()`. A hook that throws drops the event.
+
 ## 0.3.1
 
 ### Patch Changes

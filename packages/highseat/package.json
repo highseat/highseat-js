@@ -1,7 +1,7 @@
 {
   "name": "highseat",
   "version": "0.4.0",
-  "description": "Highseat analytics for JavaScript: typed tracking, a first-party proxy and framework components.",
+  "description": "Highseat analytics for JavaScript: typed tracking in the browser and on the server, a first-party proxy and framework components.",
   "keywords": [
     "analytics",
     "cookieless",
@@ -41,6 +41,10 @@
     "./proxy": {
       "types": "./src/proxy.ts",
       "default": "./src/proxy.ts"
+    },
+    "./server": {
+      "types": "./src/server.ts",
+      "default": "./src/server.ts"
     }
   },
   "publishConfig": {

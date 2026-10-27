@@ -16,8 +16,9 @@ npm install highseat
 | `highseat/react` | `<Highseat />`, `useIdentify()` and `useBeforeSend()` | React |
 | `highseat/next` | `<Highseat />`, `useIdentify()`, `useBeforeSend()`, `createProxy()` and `withHighseat()` for Next.js | Next.js |
 | `highseat/proxy` | `createProxy()`, a first-party proxy for any runtime with `fetch` | Nothing |
+| `highseat/server` | `track()`, `flush()`, `close()` and `createTracker()`, for events sent from your backend | Nothing |
 
-Each entry point loads on its own and imports no framework it does not name, so `highseat/proxy` runs in a Cloudflare Worker without React installed.
+Each entry point loads on its own and imports no framework it does not name, so `highseat/proxy` and `highseat/server` run in a Cloudflare Worker without React installed.
 
 The package loads the tracker from Highseat, or from your site's proxy path, rather than bundling it. A call made before the tracker has loaded waits for it, and no call ever throws: on a server, with the tracker blocked, or with tracking off, it does nothing.
 
@@ -226,6 +227,106 @@ A site with only the script tag sets the hook on `window.highseat` in a script b
 const attributionId = await getAttributionId()
 await createCheckout({ metadata: { attribution_id: attributionId } })
 ```
+
+## Server-side events
+
+`highseat/server` records an event from your own backend: a server action, a route handler, a webhook handler or a job. It sends with the site secret, so set both variables from your site's Installation settings on the server:
+
+```bash
+HIGHSEAT_SITE=site_…              # NEXT_PUBLIC_HIGHSEAT_SITE works too
+HIGHSEAT_SECRET=hs_secret_...
+```
+
+Pass the request you are handling, and the event takes the visitor's IP, user agent and hostname from it, so it gets their country and device:
+
+```ts
+import { track } from "highseat/server"
+
+export async function POST(request: Request) {
+  const user = await createAccount(request)
+  track("signup", { plan: "pro" }, { request, userId: user.id })
+  return Response.json(user)
+}
+```
+
+In a Next.js server action, pass the headers instead:
+
+```ts
+"use server"
+
+import { headers } from "next/headers"
+import { track } from "highseat/server"
+
+export async function subscribe(plan: string) {
+  track("subscription_started", { plan }, { headers: await headers() })
+}
+```
+
+`track()` takes the same names and properties as in the browser, checked by the same `Register`. It returns at once and never throws. Events wait up to a second to share a request, at most 25 to one, and go one request at a time. A batch Highseat answers `429` or `5xx`, or never answers, is retried with backoff, honoring `Retry-After`, and the events behind it wait. Every event gets a UUID, so a retried batch is stored once. Up to 1000 events wait during an outage. A newer one is reported to `onError` and not kept.
+
+An event no visitor caused, from a job or a webhook, leaves the request out. With a `userId` it counts as that user, and without one as a visitor of its own:
+
+```ts
+track("invoice_paid", { plan: "pro" }, { userId: customer.id, eventId: stripeEvent.id, hostname: "example.com" })
+```
+
+Pass an id your system already holds as `eventId` (a job id, a webhook event id), and a retry of the same event within three days is stored once. `timestamp` dates an event that happened earlier, up to a day ago.
+
+### Serverless functions
+
+A serverless function can stop as soon as it answers, before a batch leaves. Pass `waitUntil`, and the event is sent at once while the function stays alive until it lands:
+
+```ts
+import { waitUntil } from "@vercel/functions"
+
+track("signup", undefined, { request, userId: user.id, waitUntil })
+```
+
+In a Cloudflare Worker, pass `waitUntil: promise => ctx.waitUntil(promise)`, and in a Netlify function `context.waitUntil`. A script or a test that exits on its own awaits `flush()` first. A long-running server calls `close()` at shutdown, which sends what is queued. During an outage that can take minutes of retries, so give it a deadline inside your shutdown's grace period:
+
+```ts
+process.on("SIGTERM", async () => {
+  await close({ timeout: 5000 })
+  process.exit(0)
+})
+```
+
+Past the deadline, `close()` stops sending, reports the events not confirmed sent to `onError`, and resolves.
+
+### Your own tracker
+
+`createTracker(options)` returns a tracker with its own `track()`, `flush()` and `close()`, for credentials or a `fetch` of your own, or several sites in one process:
+
+```ts
+import { createTracker } from "highseat/server"
+
+const tracker = createTracker({
+  hostname: "example.com",
+  onError: error => logger.warn(error.message, { events: error.events }),
+})
+
+tracker.track("tier_created", { tier: "gold" }, { userId: publisher.id, ip, userAgent })
+```
+
+| Option | Default | |
+| --- | --- | --- |
+| `site` | `HIGHSEAT_SITE`, then `NEXT_PUBLIC_HIGHSEAT_SITE` | The site id. |
+| `secret` | `HIGHSEAT_SECRET` | The site secret. A value that is not one throws. Without the site or the secret, the tracker warns once and sends nothing. |
+| `hostname` | The request's host | The hostname events are filed under. An event's own `hostname` wins. |
+| `clientIp` | `"cloudflare"` in a Worker, `"vercel"` on Vercel, `"netlify"` on Netlify | Where the visitor's IP is read from a request, as for `createProxy()`. Those three hosts overwrite their header, so a visitor cannot forge it. Anywhere else, set it or pass `ip` with each event: without either, an event carries no IP and no country. |
+| `waitUntil` | None | Sends every event at once, as above. |
+| `onError` | `console.warn` | Receives each failure. `type` is `"rejected"` for events Highseat refused as invalid, `"dropped"` for events it accepted but did not store (a hostname that is not the site's, a bot, excluded traffic), each with its `reason`, or `"failed"` for events that never landed, were refused whole (a wrong secret), or were left at `close()`'s deadline. A retry Highseat recognised as already stored is not a failure. |
+| `fetch` | The global `fetch` | The `fetch` events are sent with, such as a mock in tests. |
+| `upstream` | `https://cdn.highseat.com` | The Highseat ingest origin. |
+| `flushInterval` | `1000` | Milliseconds an event waits for others to share its request. |
+| `maxRetries` | `4` | Retries of a batch before it is reported as failed. |
+| `timeout` | `10000` | Milliseconds one request may take. |
+
+Each event takes `request` or `headers`, then `ip`, `userAgent`, `userId`, `hostname`, `url`, `referrer`, `eventId`, `timestamp` and `waitUntil`. An explicit `ip` or `userAgent` wins over the request's. A `pageview` takes its `url` and `referrer` from the request too.
+
+### Without the package
+
+Any language can send the same request. `POST https://cdn.highseat.com/api/event` with `x-site-id` and `x-hs-secret` headers and a JSON array of up to 25 events. Each event names `event_name`, `hostname` (or a `page_url`), and optionally `event_id`, `user_id`, `ip`, `user_agent`, `page_url`, `referrer`, `properties` (string values) and `revenue`. The answer lists each refused event in `rejections` and each event it did not store in `dropped`, by its index in the batch.
 
 ## First-party proxy
 

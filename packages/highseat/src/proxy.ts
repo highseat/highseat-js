@@ -1,13 +1,7 @@
-import { findProxyPath, findSecret, isNextBuild } from "./env"
+import { findProxyPath, isNextBuild } from "./env"
+import { type ClientIp, DEFAULT_UPSTREAM, findValidSecret, getClientIpReader } from "./ingest"
 
-/** A host whose own header carries the visitor's IP. */
-export type ClientIpPreset = "vercel" | "cloudflare" | "netlify" | "nginx"
-
-/**
- * Where the proxy reads the visitor's IP: a host preset, or a function for any other setup. A
- * function returns the IP, or nothing when the request carries none.
- */
-export type ClientIp = ClientIpPreset | ((request: Request) => string | null | undefined)
+export type { ClientIp, ClientIpPreset } from "./ingest"
 
 export interface ProxyOptions {
   /**
@@ -49,19 +43,6 @@ export interface ProxyOptions {
 /** A fetch handler, the shape every supported runtime and framework route accepts. */
 export type ProxyHandler = (request: Request) => Promise<Response>
 
-const DEFAULT_UPSTREAM = "https://cdn.highseat.com"
-// The current prefix first. Ingest still accepts the secrets minted under the older two, so a
-// site keeps its secret when it moves to this handler.
-const SECRET_PREFIXES = ["hs_secret_", "hs_proxy_", "ana_proxy_"]
-
-const CLIENT_IP_HEADERS: Record<ClientIpPreset, string> = {
-  vercel: "x-real-ip",
-  // Read from the inbound request: Cloudflare overwrites it on the Worker's own subrequest.
-  cloudflare: "cf-connecting-ip",
-  netlify: "x-nf-client-connection-ip",
-  nginx: "x-real-ip",
-}
-
 // The visitor headers each direction forwards. Copied by name, so a cookie, an `Authorization`
 // header or a visitor's own `x-hs-*` header never reaches ingest.
 const SCRIPT_REQUEST_HEADERS = ["user-agent", "if-none-match"]
@@ -89,25 +70,6 @@ const UPSTREAM_TIMEOUT_MS = 10_000
 // Ingest refuses a larger batch, so a bigger body is answered here without buffering the rest.
 const MAX_EVENT_BYTES = 512 * 1024
 
-interface ClientIpReader {
-  read: (request: Request) => string
-  /** Where `read` looks, for the warning about an empty IP. */
-  source: string
-}
-
-function getClientIpReader(clientIp: ClientIp): ClientIpReader {
-  if (typeof clientIp === "function") {
-    return { read: request => clientIp(request)?.trim() ?? "", source: "the clientIp function" }
-  }
-
-  const header = CLIENT_IP_HEADERS[clientIp]
-  if (!header) throw new Error(`highseat/proxy: unknown clientIp preset "${String(clientIp)}".`)
-  return {
-    read: request => request.headers.get(header)?.trim() ?? "",
-    source: `the "${clientIp}" preset's ${header} header`,
-  }
-}
-
 function copyHeaders(from: Headers, to: Headers, names: string[]) {
   for (const name of names) {
     const value = from.get(name)
@@ -123,19 +85,6 @@ function answerError(status: number, error: string) {
 // answer apart from ingest's.
 function answerOtherPath() {
   return answerError(404, "Not the proxy path. The Highseat proxy answers on its own path only.")
-}
-
-/** The site secret, or `undefined` when none is set. Throws on a value that is not one. */
-function findValidSecret(option: string | undefined): string | undefined {
-  const secret = option ?? findSecret()
-  if (!secret) return
-
-  if (!SECRET_PREFIXES.some(prefix => secret.startsWith(prefix))) {
-    throw new Error(
-      `highseat/proxy: not a site secret. Copy it from the site's Installation settings; it starts with "${SECRET_PREFIXES[0]}".`,
-    )
-  }
-  return secret
 }
 
 // The handler can be created per request (a Worker that reads its options from `env`), so a
@@ -211,7 +160,7 @@ export function createProxy(options: ProxyOptions): ProxyHandler {
   let foundSecret: string | undefined
 
   try {
-    foundSecret = findValidSecret(options.secret)
+    foundSecret = findValidSecret(options.secret, "highseat/proxy")
   } catch (error) {
     // Next.js loads every route while it builds, so there the error waits for the first request
     // rather than failing a build that never serves one.
@@ -231,7 +180,7 @@ export function createProxy(options: ProxyOptions): ProxyHandler {
 
   const secret = foundSecret
 
-  const clientIpReader = getClientIpReader(options.clientIp)
+  const clientIpReader = getClientIpReader(options.clientIp, "highseat/proxy")
   let hasWarnedNoIp = false
 
   // Ingest answers 400 to every event without a visitor IP and says nothing about the preset,

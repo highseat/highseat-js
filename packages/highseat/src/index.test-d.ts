@@ -4,6 +4,7 @@ import type { HighseatProps as NextHighseatProps } from "highseat/next"
 import { createProxy } from "highseat/proxy"
 import { useIdentify } from "highseat/react"
 import type { HighseatProps } from "highseat/react"
+import { createTracker, track as trackOnServer } from "highseat/server"
 
 declare module "highseat" {
   interface Register {
@@ -162,3 +163,25 @@ void proxy("https://example.com/")
 // The config keeps its own type, so Next.js still checks every other field.
 const config = withHighseat({ reactStrictMode: true, rewrites: async () => [] })
 void (config.reactStrictMode satisfies boolean)
+
+// The server's track() takes the same names and properties, then who the event belongs to.
+declare const request: Request
+const tracker = createTracker({ hostname: "example.com", fetch: globalThis.fetch })
+trackOnServer("signup", { plan: "pro" }, { request, userId: 42 })
+trackOnServer("login", undefined, { userId: "u_1", ip: "203.0.113.7", userAgent: "Mozilla/5.0" })
+trackOnServer("newsletter_joined")
+tracker.track("purchase", { revenue: { amount: 4999, currency: "USD" } }, { eventId: "evt_1" })
+tracker.track("tier_created", { tier: "gold", paid: true }, { userId: "pub_1" })
+tracker.track("signup", { plan: "free" }, { headers: { "user-agent": "Mozilla/5.0" } })
+
+// @ts-expect-error The server checks a registered event's properties too.
+trackOnServer("signup", { plan: "enterprise" }, { userId: 42 })
+
+// @ts-expect-error A registered event with a required property needs it before the options.
+tracker.track("signup", { userId: 42 })
+
+// @ts-expect-error The options name a user with `userId`, not `user`.
+tracker.track("login", undefined, { user: "u_1" })
+
+// @ts-expect-error A preset is one of the hosts it names.
+createTracker({ clientIp: "heroku" })

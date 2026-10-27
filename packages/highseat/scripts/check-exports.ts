@@ -20,6 +20,7 @@ const ALLOWED_IMPORTS: Record<string, string[]> = {
   "./next": ["next", "react"],
   "./proxy": [],
   "./react": ["react"],
+  "./server": [],
 }
 
 // The subpaths whose built file must open with "use client", so a React Server Components app

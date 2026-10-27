@@ -23,7 +23,27 @@ export function findProxyPath(option?: string): string | undefined {
   return path.startsWith("/") ? path : `/${path}`
 }
 
-/** The site secret for the proxy handler. */
+/**
+ * The site id for `highseat/server`: `HIGHSEAT_SITE`, else the Next.js variable `<Highseat />`
+ * reads, so a Next.js app sets it once.
+ */
+export function findServerSite(): string | undefined {
+  if (typeof process === "undefined") return
+  return process.env.HIGHSEAT_SITE ?? process.env.NEXT_PUBLIC_HIGHSEAT_SITE
+}
+
+/**
+ * The host the server runs on, when its platform sets a variable that says so and a header of
+ * its own carries the visitor's IP.
+ */
+export function findHostPlatform(): "vercel" | "netlify" | undefined {
+  if (typeof process === "undefined") return
+  if (process.env.VERCEL) return "vercel"
+  if (process.env.NETLIFY) return "netlify"
+  return
+}
+
+/** The site secret for the proxy handler and `highseat/server`. */
 export function findSecret(): string | undefined {
   if (typeof process === "undefined") return
   return process.env.HIGHSEAT_SECRET

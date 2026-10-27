@@ -1,5 +1,11 @@
 # highseat
 
+## 0.5.0
+
+### Minor Changes
+
+- Add `highseat/server`, which records events from your own backend: a server action, a route handler, a webhook handler or a job. `track(name, properties, options)` takes the same names and properties as the browser's `track()`, typed by the same `Register`, and reads the visitor's IP, user agent and hostname from the `request` or `headers` you pass, or takes `ip`, `userAgent` and `userId` directly. Credentials come from `HIGHSEAT_SITE` and `HIGHSEAT_SECRET`, or from `createTracker({ site, secret })`. Events are batched, retried with backoff on `429` and `5xx` (honoring `Retry-After`), and each carries an id, so a retry is stored once. `track()` never throws: failures go to `onError`, including events Highseat accepted but did not store. Pass `waitUntil` in a serverless function so the send outlives the response, and call `flush()` or `close({ timeout })` before a process exits.
+
 ## 0.4.0
 
 ### Minor Changes

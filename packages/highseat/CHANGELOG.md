@@ -1,5 +1,12 @@
 # highseat
 
+## 0.6.0
+
+### Minor Changes
+
+- `highseat/server` knows `mcp_tool_call`, the event that records one call to a tool on your MCP server, so strict mode accepts it with no `Register` entry. Its properties are typed: `tool`, `client`, `client_source` (`client_info`, `user_agent` or `none`), `status`, `duration_ms` in whole milliseconds, and optionally `server`, `client_version` and `results`. Pass `duration_ms` and `results` as numbers. The browser's `track()` does not offer the name, because Highseat accepts it only from a server holding the site secret. A `Register` entry for `mcp_tool_call` still replaces the built-in one, so an existing declaration keeps compiling until you delete it.
+- Add `highseat/mcp`, which records the tool calls AI assistants make to your MCP server built with the MCP TypeScript SDK v2. Call `trackToolCalls(server)` once, before registering any tool, and every call sends one `mcp_tool_call` event: the tool, the client (declared in `clientInfo`, else the User-Agent's product name), the status, the duration and, for a read-only tool returning a list, how many items it returned. The tool's arguments, the caller's IP and its user agent are never sent. `mcpLink(url, context)` tags a link a tool returns with `utm_source` and `utm_medium=mcp`, so the visit it brings reads as that assistant in the AI channel. `@modelcontextprotocol/server` is an optional peer dependency.
+
 ## 0.5.0
 
 ### Minor Changes

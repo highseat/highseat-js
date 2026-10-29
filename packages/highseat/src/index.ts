@@ -88,28 +88,44 @@ type RegisteredEvents = Register extends { events: infer Registered }
   ? { [Name in keyof Registered]: CheckedProperties<Registered[Name]> }
   : {}
 
-type KnownEvents = Omit<BuiltInEvents, keyof RegisteredEvents> & RegisteredEvents
+// A registered event replaces a built-in one of the same name.
+type KnownEvents<BuiltIns> = Omit<BuiltIns, keyof RegisteredEvents> & RegisteredEvents
+
+/**
+ * The event names a `track` with the given built-in events knows, built-in or registered.
+ * `highseat/server` passes its server-only events on top of {@link BuiltInEvents}.
+ */
+export type KnownEventName<BuiltIns> = Extract<keyof KnownEvents<BuiltIns>, string>
 
 /** Every event name `track` knows, built-in or registered. */
-export type EventName = Extract<keyof KnownEvents, string>
+export type EventName = KnownEventName<BuiltInEvents>
 
 /**
- * The names `track` accepts: known names, and any other string unless the site is strict.
- * `string & {}` keeps the known names in the editor's suggestions, which a plain `string` in the
- * union would absorb.
+ * The names a `track` with the given built-in events accepts: known names, and any other string
+ * unless the site is strict. `string & {}` keeps the known names in the editor's suggestions,
+ * which a plain `string` in the union would absorb.
  */
-export type TrackName = Register extends { strict: true } ? EventName : EventName | (string & {})
+export type TrackNameOf<BuiltIns> = Register extends { strict: true }
+  ? KnownEventName<BuiltIns>
+  : KnownEventName<BuiltIns> | (string & {})
+
+/** The names `track` accepts: known names, and any other string unless the site is strict. */
+export type TrackName = TrackNameOf<BuiltInEvents>
 
 /**
- * The arguments after an event's name. A known name takes its declared properties, required
- * when any of them is; any other name takes {@link Properties}. Wrapped in tuples so a union of
- * names is checked as a whole rather than name by name.
+ * The arguments after an event's name, for a `track` with the given built-in events. A known
+ * name takes its declared properties, required when any of them is; any other name takes
+ * {@link Properties}. Wrapped in tuples so a union of names is checked as a whole rather than
+ * name by name.
  */
-export type TrackArgs<Name extends string> = [Name] extends [EventName]
-  ? {} extends KnownEvents[Name]
-    ? [properties?: KnownEvents[Name]]
-    : [properties: KnownEvents[Name]]
+export type TrackArgsOf<BuiltIns, Name extends string> = [Name] extends [KnownEventName<BuiltIns>]
+  ? {} extends KnownEvents<BuiltIns>[Name]
+    ? [properties?: KnownEvents<BuiltIns>[Name]]
+    : [properties: KnownEvents<BuiltIns>[Name]]
   : [properties?: Properties]
+
+/** The arguments after an event's name: its properties. See {@link TrackArgsOf}. */
+export type TrackArgs<Name extends string> = TrackArgsOf<BuiltInEvents, Name>
 
 /**
  * A user id from your own system, as {@link identify} takes it. A string or a number identifies

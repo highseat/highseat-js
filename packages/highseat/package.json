@@ -45,6 +45,10 @@
     "./server": {
       "types": "./src/server.ts",
       "default": "./src/server.ts"
+    },
+    "./mcp": {
+      "types": "./src/mcp.ts",
+      "default": "./src/mcp.ts"
     }
   },
   "publishConfig": {
@@ -63,6 +67,7 @@
   "devDependencies": {
     "@cloudflare/vitest-plugin": "^1.4.6",
     "@dirstack/kodeks": "1.9.2",
+    "@modelcontextprotocol/server": "2.3.1",
     "@types/node": "^24.0.0",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
@@ -74,10 +79,14 @@
     "vitest": "^5.0.5"
   },
   "peerDependencies": {
+    "@modelcontextprotocol/server": ">=2",
     "next": ">=14",
     "react": ">=18"
   },
   "peerDependenciesMeta": {
+    "@modelcontextprotocol/server": {
+      "optional": true
+    },
     "next": {
       "optional": true
     },

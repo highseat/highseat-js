@@ -1,4 +1,6 @@
+import type { McpServer } from "@modelcontextprotocol/server"
 import { getAttributionId, identify, inject, track } from "highseat"
+import { trackToolCalls } from "highseat/mcp"
 import { useIdentify as useNextIdentify, withHighseat } from "highseat/next"
 import type { HighseatProps as NextHighseatProps } from "highseat/next"
 import { createProxy } from "highseat/proxy"
@@ -182,6 +184,58 @@ tracker.track("signup", { userId: 42 })
 
 // @ts-expect-error The options name a user with `userId`, not `user`.
 tracker.track("login", undefined, { user: "u_1" })
+
+// The server knows the MCP tool call by name, with numbers where the figures are numbers.
+tracker.track("mcp_tool_call", {
+  tool: "search_tools",
+  server: "public",
+  client: "claude-ai",
+  client_version: "1.0.0",
+  client_source: "client_info",
+  status: "ok",
+  results: 12,
+  duration_ms: 84,
+})
+trackOnServer("mcp_tool_call", {
+  tool: "get_tool",
+  client: "Claude-User",
+  client_source: "user_agent",
+  status: "NOT_FOUND",
+  duration_ms: 31,
+})
+
+tracker.track("mcp_tool_call", {
+  tool: "get_tool",
+  client: "unknown",
+  client_source: "none",
+  status: "ok",
+  // @ts-expect-error A tool call's duration is a number of milliseconds, not a string.
+  duration_ms: "31",
+})
+
+// @ts-expect-error A tool call says how its client was found.
+tracker.track("mcp_tool_call", {
+  tool: "get_tool",
+  client: "unknown",
+  status: "ok",
+  duration_ms: 31,
+})
+
+tracker.track("mcp_tool_call", {
+  tool: "get_tool",
+  client: "unknown",
+  // @ts-expect-error The client was found in one of three ways.
+  client_source: "guess",
+  status: "ok",
+  duration_ms: 31,
+})
+
+// A tracker from createTracker() sends tool calls for trackToolCalls().
+declare const mcpServer: McpServer
+trackToolCalls(mcpServer, { tracker, server: "public" })
+
+// @ts-expect-error A tracker sends the tool-call event, so a plain function is not one.
+trackToolCalls(mcpServer, { tracker: () => undefined })
 
 // @ts-expect-error A preset is one of the hosts it names.
 createTracker({ clientIp: "heroku" })

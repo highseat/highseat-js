@@ -17,6 +17,7 @@ npm install highseat
 | `highseat/next` | `<Highseat />`, `useIdentify()`, `useBeforeSend()`, `createProxy()` and `withHighseat()` for Next.js | Next.js |
 | `highseat/proxy` | `createProxy()`, a first-party proxy for any runtime with `fetch` | Nothing |
 | `highseat/server` | `track()`, `flush()`, `close()` and `createTracker()`, for events sent from your backend | Nothing |
+| `highseat/mcp` | `trackToolCalls()` and `mcpLink()`, for the tool calls AI assistants make to your MCP server | The MCP TypeScript SDK v2 |
 
 Each entry point loads on its own and imports no framework it does not name, so `highseat/proxy` and `highseat/server` run in a Cloudflare Worker without React installed.
 
@@ -327,6 +328,48 @@ Each event takes `request` or `headers`, then `ip`, `userAgent`, `userId`, `host
 ### Without the package
 
 Any language can send the same request. `POST https://cdn.highseat.com/api/event` with `x-site-id` and `x-hs-secret` headers and a JSON array of up to 25 events. Each event names `event_name`, `hostname` (or a `page_url`), and optionally `event_id`, `user_id`, `ip`, `user_agent`, `page_url`, `referrer`, `properties` (string values) and `revenue`. The answer lists each refused event in `rejections` and each event it did not store in `dropped`, by its index in the batch.
+
+## MCP tool calls
+
+`highseat/mcp` records each call an AI assistant (Claude, ChatGPT, Cursor and others) makes to a tool on your MCP server, built with the MCP TypeScript SDK v2. It sends through `highseat/server`, so set `HIGHSEAT_SITE` and `HIGHSEAT_SECRET` on the server as above. Call `trackToolCalls()` once, after creating the server and before registering any tool:
+
+```ts
+import { McpServer } from "@modelcontextprotocol/server"
+import { mcpLink, trackToolCalls } from "highseat/mcp"
+import { z } from "zod"
+
+const server = new McpServer({ name: "Acme", version: "1.0.0" })
+trackToolCalls(server, { hostname: "acme.com" })
+
+server.registerTool(
+  "get_product",
+  {
+    description: "One product, by its slug.",
+    inputSchema: z.object({ slug: z.string() }),
+    annotations: { readOnlyHint: true },
+  },
+  async ({ slug }, context) => ({
+    content: [{ type: "text", text: mcpLink(`https://acme.com/products/${slug}`, context) }],
+  }),
+)
+```
+
+Each call sends one `mcp_tool_call` event with these properties:
+
+| Property | |
+| --- | --- |
+| `tool` | The tool's name. |
+| `server` | The `server` option, a label such as `public` or `admin` for a site with more than one MCP server. |
+| `client` | The name the client declares in `clientInfo`, else the product name its User-Agent starts with, such as `Claude-User`, else `unknown`. |
+| `client_version` | The version the client declares, when it declares one. |
+| `client_source` | `client_info`, `user_agent` or `none`: how `client` was found. |
+| `status` | `ok`, or the error code the client saw: the `code` of a thrown error, the `CODE:` an error result's text starts with, else `TOOL_ERROR` or `INTERNAL_SERVER_ERROR`. |
+| `results` | How many items a read-only tool returned, when its result is a list, or an object holding exactly one list. |
+| `duration_ms` | How long the call took, in whole milliseconds. |
+
+It never sends the tool's arguments, its result, the caller's IP or its user agent, and it never reads ChatGPT's user or conversation ids. Assistant directories forbid collecting conversation data, and every call comes from the assistant's servers rather than from a person, so a tool call counts as an event, never as a visitor. Highseat accepts `mcp_tool_call` only from a server holding the site secret.
+
+`mcpLink(url, context)` tags a link a tool returns with `utm_source` set to the client and `utm_medium=mcp`, so a visit it brings reads as that assistant in the AI channel. A link that already names a `utm_source` is returned as it is. Pass `waitUntil` to `trackToolCalls()` in a serverless function, and `tracker` to send with a tracker from `createTracker()`.
 
 ## First-party proxy
 

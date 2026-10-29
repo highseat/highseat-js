@@ -1,5 +1,5 @@
 import { findHostPlatform, findServerSite, isNextBuild } from "./env"
-import type { PropertyValue, Revenue, TrackArgs, TrackName } from "./index"
+import type { BuiltInEvents, PropertyValue, Revenue, TrackArgsOf, TrackNameOf } from "./index"
 import { type ClientIp, DEFAULT_UPSTREAM, findValidSecret, getClientIpReader } from "./ingest"
 
 export type { ClientIp, ClientIpPreset } from "./ingest"
@@ -129,17 +129,60 @@ export interface TrackerOptions {
 }
 
 /**
+ * The events Highseat knows by name that only a server sends, on top of the browser's built-in
+ * events. Highseat refuses them from a browser. A site overrides an entry through `Register`.
+ */
+export interface ServerBuiltInEvents {
+  /**
+   * One call to a tool on the site's MCP server. `highseat/mcp` sends it for every call. Never
+   * put the tool's arguments in it: assistant directories forbid recording conversation data.
+   */
+  mcp_tool_call: {
+    /** The tool's name. */
+    tool: string
+    /** A label for the MCP server, such as `public` or `admin`, when the site runs more than one. */
+    server?: string
+    /**
+     * The client's name as it declares it in `clientInfo`, else the product name its User-Agent
+     * starts with (`Claude-User`), else `unknown`.
+     */
+    client: string
+    /** The version the client declares in `clientInfo`, when it declares one. */
+    client_version?: string
+    /**
+     * How `client` was found: declared in `clientInfo`, read off the User-Agent, or neither. A
+     * declared name is the one to trust.
+     */
+    client_source: "client_info" | "user_agent" | "none"
+    /** `ok`, or the error code the client saw, such as `NOT_FOUND`. */
+    status: "ok" | (string & {})
+    /**
+     * How many items the call returned, for a read-only tool whose result is a list. Left out
+     * for any other tool, so an empty list counts as an empty result and nothing else does.
+     */
+    results?: number
+    /** How long the call took, in whole milliseconds. */
+    duration_ms: number
+  }
+}
+
+type ServerEvents = BuiltInEvents & ServerBuiltInEvents
+
+/** The names the server's `track()` accepts: the browser's, plus {@link ServerBuiltInEvents}. */
+export type ServerTrackName = TrackNameOf<ServerEvents>
+
+/**
  * The arguments after an event's name: its properties, typed by `Register` as for the browser's
  * `track()`, then the options that say who it belongs to.
  */
 export type ServerTrackArgs<Name extends string> = [
-  ...TrackArgs<Name>,
+  ...TrackArgsOf<ServerEvents, Name>,
   options?: ServerEventOptions,
 ]
 
 export interface Tracker {
   /** Records an event, queued and sent in the background. Returns at once and never throws. */
-  track: <Name extends TrackName>(name: Name, ...args: ServerTrackArgs<Name>) => void
+  track: <Name extends ServerTrackName>(name: Name, ...args: ServerTrackArgs<Name>) => void
   /** Sends every queued event, and resolves once each has landed or failed. Never rejects. */
   flush: () => Promise<void>
   /**
@@ -642,7 +685,10 @@ function getDefaultTracker(): Tracker {
  * track("signup", { plan: "pro" }, { request, userId: user.id })
  * ```
  */
-export function track<Name extends TrackName>(name: Name, ...args: ServerTrackArgs<Name>): void {
+export function track<Name extends ServerTrackName>(
+  name: Name,
+  ...args: ServerTrackArgs<Name>
+): void {
   getDefaultTracker().track(name, ...args)
 }
 

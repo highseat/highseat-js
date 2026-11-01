@@ -13,9 +13,9 @@ export interface ProxyOptions {
    */
   path?: string
   /**
-   * The site secret, `hs_secret_…`, or an older one that starts `hs_proxy_` or `ana_proxy_`.
-   * Defaults to the `HIGHSEAT_SECRET` environment variable. Without one the proxy is off: the
-   * proxy path answers 503, or every request goes to `fallback`.
+   * The site secret, `hs_secret_…`, from the site's Installation settings. Defaults to the
+   * `HIGHSEAT_SECRET` environment variable. Without one the proxy is off: the proxy path answers
+   * 503, or every request goes to `fallback`.
    */
   secret?: string
   /**

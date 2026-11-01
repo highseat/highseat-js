@@ -2,7 +2,7 @@ import { findSecret } from "./env"
 
 /**
  * What `highseat/proxy` and `highseat/server` share about reaching ingest: its host, the site
- * secret's prefixes and where the visitor's IP is read.
+ * secret's prefix and where the visitor's IP is read.
  */
 
 /** A host whose own header carries the visitor's IP. */
@@ -17,9 +17,7 @@ export type ClientIp = ClientIpPreset | ((request: Request) => string | null | u
 /** The ingest origin both handlers send to unless told otherwise. */
 export const DEFAULT_UPSTREAM = "https://cdn.highseat.com"
 
-// The current prefix first. Ingest still accepts the secrets minted under the older two, so a
-// site keeps its secret when it moves to this package.
-const SECRET_PREFIXES = ["hs_secret_", "hs_proxy_", "ana_proxy_"]
+const SECRET_PREFIX = "hs_secret_"
 
 const CLIENT_IP_HEADERS: Record<ClientIpPreset, string> = {
   vercel: "x-real-ip",
@@ -41,10 +39,10 @@ interface ClientIpReader {
  */
 export function findValidSecret(option: string | undefined, entry: string): string | undefined {
   const secret = option ?? findSecret()
-  if (!secret || SECRET_PREFIXES.some(prefix => secret.startsWith(prefix))) return secret
+  if (!secret || secret.startsWith(SECRET_PREFIX)) return secret
 
   throw new Error(
-    `${entry}: not a site secret. Copy it from the site's Installation settings; it starts with "${SECRET_PREFIXES[0]}".`,
+    `${entry}: not a site secret. Copy it from the site's Installation settings; it starts with "${SECRET_PREFIX}".`,
   )
 }
 

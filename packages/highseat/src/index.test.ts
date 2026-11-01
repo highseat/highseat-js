@@ -3,7 +3,6 @@ import {
   getAttributionId,
   identify,
   inject,
-  SCRIPT_URL,
   setBeforeSend,
   track,
   type BeforeSendEvent,
@@ -286,7 +285,11 @@ describe("getAttributionId", () => {
   test("waits for a tracker script with an older site's UUID id", async () => {
     const site = "2c2b8e5d-8d22-4a77-9def-f720b5292db1"
 
-    for (const src of ["https://site.test/0c1c2f2993", "/0c1c2f2993", SCRIPT_URL]) {
+    for (const src of [
+      "https://site.test/0c1c2f2993",
+      "/0c1c2f2993",
+      "https://cdn.highseat.com/script.js",
+    ]) {
       host.window = {}
       host.document = createDocument([createScript({ site }, src)])
       const id = getAttributionId()
@@ -333,7 +336,7 @@ describe("inject", () => {
 
     inject({ site: "site_1" })
 
-    expect(scripts[0]?.src).toBe(SCRIPT_URL)
+    expect(scripts[0]?.src).toBe("https://cdn.highseat.com/script.js")
   })
 
   test("adds one script when a component mounts again", () => {

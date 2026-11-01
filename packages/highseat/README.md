@@ -400,7 +400,7 @@ To rotate the path, rotate it in Installation settings, update `HIGHSEAT_PATH` a
 | --- | --- | --- |
 | `clientIp` | Required | Where the visitor's IP comes from: `"vercel"`, `"cloudflare"`, `"netlify"`, `"nginx"` (the `X-Real-IP` header your nginx sets), or a function `(request) => string`. The outermost proxy that sets the header decides the preset: behind a proxied Cloudflare record, use `"cloudflare"` on any origin (Next.js, TanStack Start, a Node server, with or without Traefik or nginx in between), whose `X-Real-IP` holds a Cloudflare edge address. A visitor can write any header the host does not overwrite, so there is no default and no fallback to `X-Forwarded-For`. |
 | `path` | `HIGHSEAT_PATH` | The proxy path. Any other path answers 404, or goes to `fallback`. Leave it unset where your router already sends only the proxy path to the handler. |
-| `secret` | `HIGHSEAT_SECRET` | The site secret. An older secret that starts `hs_proxy_` or `ana_proxy_` works too. A value with neither prefix throws. |
+| `secret` | `HIGHSEAT_SECRET` | The site secret. A value that does not start with `hs_secret_` throws. |
 | `upstream` | `https://cdn.highseat.com` | The Highseat ingest origin. |
 | `fallback` | None | Answers every other path, for a handler that sees every request on the site. Needs `path`. |
 

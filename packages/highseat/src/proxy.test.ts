@@ -69,15 +69,10 @@ describe("createProxy", () => {
     expect(() => createProxy({ ...OPTIONS, secret: "site_1" })).toThrow(/not a site secret/)
   })
 
-  test("accepts a secret minted under an older prefix", async () => {
+  test("throws on a secret minted under an older prefix", () => {
     for (const secret of ["hs_proxy_old", "ana_proxy_old"]) {
-      await createProxy({ ...OPTIONS, secret })(new Request(`${SITE}${PATH}`))
+      expect(() => createProxy({ ...OPTIONS, secret })).toThrow(/not a site secret/)
     }
-
-    expect(forwarded.map(({ headers }) => headers.get("x-hs-secret"))).toEqual([
-      "hs_proxy_old",
-      "ana_proxy_old",
-    ])
   })
 
   test("adds the leading slash to a path written without one", async () => {

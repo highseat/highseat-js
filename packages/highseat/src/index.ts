@@ -219,7 +219,7 @@ declare global {
 }
 
 /** Where the tracker loads from when the site has no proxy path. */
-export const SCRIPT_URL = "https://cdn.highseat.com/script.js"
+const SCRIPT_URL = "https://cdn.highseat.com/script.js"
 
 // The tracker marks its own API with this symbol. A site's own stub can define methods too, so
 // only the symbol proves the tracker is running.

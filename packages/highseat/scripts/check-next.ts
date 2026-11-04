@@ -11,7 +11,8 @@ import { fileURLToPath } from "node:url"
  *
  * Each build, with Turbopack and with webpack, gets `HIGHSEAT_PATH`, and the server it starts
  * does not, as in a Docker image that takes the path as a build argument. A page rendered at
- * request time must still load the tracker from the path. Run after `build`.
+ * request time must still load the tracker from the path. `<Embed />` crosses the same boundary
+ * from a server page, and its credit link must be in the HTML. Run after `build`.
  */
 
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
@@ -31,8 +32,8 @@ function run(command: string, args: string[], options: SpawnSyncOptions): string
   return output
 }
 
-/** The HTML of `pathname` from `next start`, with `HIGHSEAT_PATH` dropped from its env. */
-async function fetchWithoutPath(pathname: string): Promise<string> {
+/** The HTML of each pathname from `next start`, with `HIGHSEAT_PATH` dropped from its env. */
+async function fetchWithoutPath(...pathnames: string[]): Promise<string[]> {
   // The server gets its own process group, so killing the group stops Next.js as well as Bun.
   const server = spawn("env", ["-u", "HIGHSEAT_PATH", "bun", "run", "start", "--port", PORT], {
     cwd: FIXTURE,
@@ -43,7 +44,12 @@ async function fetchWithoutPath(pathname: string): Promise<string> {
   try {
     for (let attempt = 0; attempt < 60; attempt++) {
       try {
-        return await (await fetch(`http://localhost:${PORT}${pathname}`)).text()
+        return await Promise.all(
+          pathnames.map(async pathname => {
+            const response = await fetch(`http://localhost:${PORT}${pathname}`)
+            return response.text()
+          }),
+        )
       } catch {
         await new Promise(resolve => setTimeout(resolve, 500))
       }
@@ -73,10 +79,17 @@ for (const bundler of ["--turbopack", "--webpack"]) {
   )
 
   // The RSC payload in the HTML escapes its quotes, so the props are matched loosely.
-  const props = (await fetchWithoutPath("/dynamic")).match(/site_request_time[^}]*/)?.[0]
+  const [dynamicHtml, embedHtml] = await fetchWithoutPath("/dynamic", "/embed")
+  const props = dynamicHtml?.match(/site_request_time[^}]*/)?.[0]
 
   if (!props?.includes(PROXY_PATH)) {
     console.error(`check-next: ${bundler} rendered no proxy src at request time: ${props}`)
+    process.exit(1)
+  }
+
+  // The credit link is the backlink, so it must reach a crawler that runs no JavaScript.
+  if (!embedHtml?.includes('href="https://highseat.com/?ref=embed"')) {
+    console.error(`check-next: ${bundler} left the embed credit link out of the server HTML`)
     process.exit(1)
   }
 }

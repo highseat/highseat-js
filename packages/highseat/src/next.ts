@@ -3,8 +3,9 @@ import { findNextSite, findProxyPath } from "./env"
 import { Highseat as ReactHighseat, type HighseatProps as ReactHighseatProps } from "./react"
 
 export { createProxy } from "./proxy"
-export { useBeforeSend, useIdentify } from "./react"
+export { Embed, useBeforeSend, useIdentify } from "./react"
 export type { ClientIp, ClientIpPreset, ProxyHandler, ProxyOptions } from "./proxy"
+export type { EmbedBackground, EmbedProps, EmbedTheme, EmbedWidget } from "./react"
 
 /**
  * The props of `<Highseat />` in a server layout. `beforeSend` is left out: a server component

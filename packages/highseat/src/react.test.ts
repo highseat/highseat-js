@@ -1,9 +1,11 @@
 import { Window } from "happy-dom"
 import { act, createElement, StrictMode, type ReactElement } from "react"
-import { createRoot, type Root } from "react-dom/client"
-import { afterEach, beforeEach, describe, expect, test } from "vitest"
+import { createRoot, hydrateRoot, type Root } from "react-dom/client"
+import { renderToString } from "react-dom/server"
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
+import { EMBED_ORIGIN, EMBED_RESIZE_MESSAGE } from "./embed"
 import type { BeforeSend, BeforeSendEvent, UserId } from "./index"
-import { Highseat, useBeforeSend, useIdentify } from "./react"
+import { Embed, Highseat, useBeforeSend, useIdentify, type EmbedProps } from "./react"
 
 interface Host {
   window?: unknown
@@ -23,6 +25,7 @@ const host = globalThis as unknown as Host
 
 let page: Window
 let root: Root
+let container: ReturnType<Window["document"]["createElement"]>
 
 function Identify({ userId }: IdentifyProps) {
   useIdentify(userId)
@@ -47,6 +50,30 @@ function render(element: ReactElement) {
   act(() => root.render(createElement(StrictMode, null, element)))
 }
 
+function renderEmbed(props: Partial<EmbedProps> = {}) {
+  render(createElement(Embed, { token: "abc", title: "Visitors", ...props }))
+}
+
+function getFrame() {
+  const frame = container.querySelector("iframe")
+  if (!frame) throw new Error("The embed rendered no frame")
+  return frame as unknown as HTMLIFrameElement
+}
+
+// happy-dom loads no page into a frame, so each frame gets a window of its own here.
+function stubFrameWindow(frame: HTMLIFrameElement) {
+  const frameWindow = {}
+  Object.defineProperty(frame, "contentWindow", { value: frameWindow })
+  return frameWindow
+}
+
+function postResize(height: unknown, origin: string, source: unknown) {
+  const data = { type: EMBED_RESIZE_MESSAGE, height }
+  const event = new page.MessageEvent("message", { data, origin })
+  Object.defineProperty(event, "source", { value: source })
+  act(() => void page.dispatchEvent(event))
+}
+
 function findGlobal() {
   return (page as unknown as { highseat?: { q?: unknown[]; beforeSend?: unknown } }).highseat
 }
@@ -58,12 +85,17 @@ function findQueue() {
 beforeEach(() => {
   // The page never fetches the tracker: only the script tag and the queue are under test.
   page = new Window({
-    settings: { disableJavaScriptFileLoading: true, disableJavaScriptEvaluation: true },
+    settings: {
+      disableJavaScriptFileLoading: true,
+      disableJavaScriptEvaluation: true,
+      disableIframePageLoading: true,
+    },
   })
   host.window = page
   host.document = page.document
   host.IS_REACT_ACT_ENVIRONMENT = true
-  root = createRoot(page.document.createElement("div") as unknown as Element)
+  container = page.document.createElement("div")
+  root = createRoot(container as unknown as Element)
 })
 
 afterEach(async () => {
@@ -135,5 +167,135 @@ describe("Highseat", () => {
     render(createElement(Highseat, { site: "site_1" }))
 
     expect(findQueue()).toBeUndefined()
+  })
+})
+
+describe("Embed", () => {
+  test("renders the credit link and no frame on the server", () => {
+    const html = renderToString(createElement(Embed, { token: "abc", title: "Visitors" }))
+
+    expect(html).toContain('href="https://highseat.com/?ref=embed"')
+    expect(html).toContain(">Analytics by Highseat</a>")
+    expect(html).not.toContain("nofollow")
+    expect(html).not.toContain("<iframe")
+  })
+
+  test("holds the height of the widget's kind on the server", () => {
+    const element = createElement(Embed, { token: "abc", title: "Visitors", widget: "chart" })
+
+    expect(renderToString(element)).toContain("height:360px")
+  })
+
+  test("hydrates a theme the server did not know without a mismatch", () => {
+    const errors: unknown[] = []
+    const props = { token: "abc", title: "Visitors", widget: "chart" } as const
+    const hydrated = page.document.createElement("div")
+    hydrated.innerHTML = renderToString(createElement(Embed, props))
+
+    let hydratedRoot: Root | undefined
+    act(() => {
+      hydratedRoot = hydrateRoot(
+        hydrated as unknown as Element,
+        createElement(Embed, { ...props, theme: "dark" }),
+        { onRecoverableError: error => errors.push(error) },
+      )
+    })
+
+    expect(errors).toEqual([])
+    expect(hydrated.querySelector("iframe")?.getAttribute("src")).toContain("theme=dark")
+    act(() => hydratedRoot?.unmount())
+  })
+
+  test("omits the credit link when asked", () => {
+    const element = createElement(Embed, { token: "abc", title: "Visitors", credit: false })
+
+    expect(renderToString(element)).not.toContain("<a")
+  })
+
+  test("lets a class replace the credit link's default style", () => {
+    renderEmbed({ creditClassName: "credit" })
+
+    const link = container.querySelector("a")
+    expect(link?.className).toBe("credit")
+    expect(link?.getAttribute("style")).toBeNull()
+  })
+
+  test("frames a widget with a transparent background and a matching scheme", () => {
+    renderEmbed({ widget: "chart", theme: "dark" })
+
+    const frame = getFrame()
+    expect(frame.src).toBe(`${EMBED_ORIGIN}/share/abc?embed=1&theme=dark&background=transparent`)
+    expect(frame.style.colorScheme).toBe("dark")
+    expect(frame.style.height).toBe("360px")
+  })
+
+  test("frames a whole board with its own background at the board's height", () => {
+    renderEmbed()
+
+    const frame = getFrame()
+    expect(frame.src).toBe(`${EMBED_ORIGIN}/share/abc?embed=1`)
+    expect(frame.style.colorScheme).toBe("")
+    expect(frame.style.height).toBe("1600px")
+  })
+
+  test("passes other attributes to the frame and a class to its box", () => {
+    renderEmbed({ id: "traffic", loading: "eager", className: "box" })
+
+    expect(getFrame().id).toBe("traffic")
+    expect(getFrame().getAttribute("loading")).toBe("eager")
+    expect(getFrame().parentElement?.className).toBe("box")
+  })
+
+  test("holds the slot until a null theme becomes known", () => {
+    renderEmbed({ theme: null, height: 200 })
+    expect(container.querySelector("iframe")).toBeNull()
+
+    renderEmbed({ theme: "light", height: 200 })
+    expect(getFrame().src).toContain("theme=light")
+  })
+
+  test("takes the height its own frame reports from the embed origin", () => {
+    renderEmbed({ widget: "chart" })
+
+    postResize(412.5, EMBED_ORIGIN, stubFrameWindow(getFrame()))
+
+    expect(getFrame().style.height).toBe("413px")
+  })
+
+  test("ignores a resize from another origin", () => {
+    renderEmbed({ widget: "chart" })
+
+    postResize(412, "https://evil.example", stubFrameWindow(getFrame()))
+
+    expect(getFrame().style.height).toBe("360px")
+  })
+
+  test("ignores a resize from another frame", () => {
+    renderEmbed({ widget: "chart" })
+    stubFrameWindow(getFrame())
+
+    postResize(412, EMBED_ORIGIN, {})
+
+    expect(getFrame().style.height).toBe("360px")
+  })
+
+  test("keeps the reported height across a theme change and replaces the frame", () => {
+    renderEmbed({ widget: "chart", theme: "light" })
+    const frame = getFrame()
+    postResize(412, EMBED_ORIGIN, stubFrameWindow(frame))
+
+    renderEmbed({ widget: "chart", theme: "dark" })
+
+    expect(getFrame()).not.toBe(frame)
+    expect(getFrame().style.height).toBe("412px")
+  })
+
+  test("stops listening on unmount", () => {
+    const removeEventListener = vi.spyOn(page, "removeEventListener")
+    renderEmbed({ widget: "chart" })
+
+    act(() => root.render(null))
+
+    expect(removeEventListener).toHaveBeenCalledWith("message", expect.any(Function))
   })
 })

@@ -13,8 +13,8 @@ npm install highseat
 | Import | Contents | Needs |
 | --- | --- | --- |
 | `highseat` | `track()`, `identify()`, `getAttributionId()`, `inject()` and `setBeforeSend()` | Nothing |
-| `highseat/react` | `<Highseat />`, `useIdentify()` and `useBeforeSend()` | React |
-| `highseat/next` | `<Highseat />`, `useIdentify()`, `useBeforeSend()`, `createProxy()` and `withHighseat()` for Next.js | Next.js |
+| `highseat/react` | `<Highseat />`, `<Embed />`, `useIdentify()` and `useBeforeSend()` | React |
+| `highseat/next` | `<Highseat />`, `<Embed />`, `useIdentify()`, `useBeforeSend()`, `createProxy()` and `withHighseat()` for Next.js | Next.js |
 | `highseat/proxy` | `createProxy()`, a first-party proxy for any runtime with `fetch` | Nothing |
 | `highseat/server` | `track()`, `flush()`, `close()` and `createTracker()`, for events sent from your backend | Nothing |
 | `highseat/mcp` | `trackToolCalls()` and `mcpLink()`, for the tool calls AI assistants make to your MCP server | The MCP TypeScript SDK v2 |
@@ -95,6 +95,47 @@ A site without a bundler, or a website builder such as Webflow or Shopify, needs
 ```html
 <script defer src="https://cdn.highseat.com/script.js" data-site="site_…"></script>
 ```
+
+## Embeds
+
+`<Embed />` shows a share link or a widget on your page. Its `token` is the last part of the `/share/` address in the embed code, and `title` names the frame for screen readers. It needs no script tag: the component fits the frame to the embed and follows it as it resizes.
+
+Pass your page's theme when the page has its own switch, so the frame's colours match the page:
+
+```tsx
+"use client"
+
+import { Embed } from "highseat/react"
+import { useTheme } from "next-themes"
+
+export function VisitorsChart() {
+  const { resolvedTheme } = useTheme()
+
+  return (
+    <Embed
+      token="YOUR_WIDGET_TOKEN"
+      title="Visitors in the last 30 days"
+      widget="chart"
+      theme={resolvedTheme === "dark" ? "dark" : "light"}
+    />
+  )
+}
+```
+
+The server renders an empty box at the frame's height, and the frame replaces it after mount. So a theme known only in the browser needs no mounted check of your own and causes no hydration mismatch. If the theme is still unknown after mount, pass `theme={null}`: the box stays empty until you pass a theme, and the frame loads once. Leave `theme` out to follow the reader's own light or dark setting.
+
+| Prop | Default | Does |
+| --- | --- | --- |
+| `token` | Required | The share link or widget to show |
+| `title` | Required | The frame's accessible name |
+| `theme` | `"system"` | `"system"`, `"light"`, `"dark"`, or `null` while your page's theme is unknown |
+| `widget` | None, for a whole board | `"chart"` or `"figure"`, which sets the height held before the frame loads: 360px, 80px, or 1600px for a board |
+| `background` | `"transparent"` for a widget, otherwise `"default"` | `"transparent"` lets your page's background show through |
+| `height` | Set by `widget` | The height in pixels to hold until the embed reports its own |
+| `credit` | `true` | Shows the "Analytics by Highseat" link under the frame |
+| `creditClassName` | None | A class for the credit link, which replaces its default spacing and size |
+
+`className` and `style` go to the box around the frame and the credit link. Other attributes, such as `id` or `loading`, go to the frame. The credit link is a plain, followed link in the server's HTML, and it is yours to remove: pass `credit={false}`.
 
 ## Debugging
 

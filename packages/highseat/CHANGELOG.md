@@ -1,5 +1,12 @@
 # highseat
 
+## 0.7.0
+
+### Minor Changes
+
+- `highseat/proxy` and `highseat/server` accept only a site secret that starts `hs_secret_`. A secret minted under the older `hs_proxy_` or `ana_proxy_` prefix now throws when the handler is created: rotate it in the site's Installation settings and set the new one in `HIGHSEAT_SECRET`. The `SCRIPT_URL` export is removed. `inject()` still loads the tracker from Highseat's CDN when you pass no `src`.
+- `highseat/react` and `highseat/next` export `<Embed />`, which shows a share link or a widget on your page. It sizes its frame to the embed without a script tag, sets the colour scheme that matches the theme, and renders the credit link in the server's HTML. Pass `credit={false}` to remove the link.
+
 ## 0.6.0
 
 ### Minor Changes

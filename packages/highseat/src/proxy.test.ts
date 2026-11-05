@@ -412,6 +412,14 @@ describe("the event response", () => {
     expect(response.headers.get("x-hs-ip")).toBe("203.0.113.7")
   })
 
+  test("forwards a 403 with its JSON body, which the tracker reads", async () => {
+    const error = "example.vercel.app is not allowed for this site"
+    respond = () => Response.json({ error }, { status: 403 })
+    const response = await createProxy(OPTIONS)(sendEvent())
+    expect(response.status).toBe(403)
+    expect(await response.json()).toEqual({ error })
+  })
+
   test("forwards retry-after on a refusal", async () => {
     respond = () => new Response(null, { status: 429, headers: { "retry-after": "1" } })
     const response = await createProxy(OPTIONS)(sendEvent())

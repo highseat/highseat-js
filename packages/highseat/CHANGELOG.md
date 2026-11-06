@@ -1,5 +1,11 @@
 # highseat
 
+## 0.8.0
+
+### Minor Changes
+
+- Add `highseat/api`, a typed client of the Highseat API. Paths, parameters and answers come from the API's OpenAPI document, and it takes an API key or an OAuth access token.
+
 ## 0.7.0
 
 ### Minor Changes

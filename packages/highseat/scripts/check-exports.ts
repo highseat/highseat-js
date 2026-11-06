@@ -22,6 +22,7 @@ const ALLOWED_IMPORTS: Record<string, string[]> = {
   "./react": ["react"],
   "./server": [],
   "./mcp": [],
+  "./api": [],
 }
 
 // The subpaths whose built file must open with "use client", so a React Server Components app

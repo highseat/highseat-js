@@ -9,6 +9,7 @@ const config: UserConfig = defineConfig({
     "src/proxy.ts",
     "src/server.ts",
     "src/mcp.ts",
+    "src/api.ts",
   ],
   format: "esm",
   platform: "neutral",

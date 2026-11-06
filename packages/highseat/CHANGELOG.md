@@ -1,5 +1,11 @@
 # highseat
 
+## 0.9.0
+
+### Minor Changes
+
+- Add `GET /sites/overview` to the typed API client: every site's recent traffic in one call.
+
 ## 0.8.0
 
 ### Minor Changes

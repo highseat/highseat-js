@@ -18,6 +18,7 @@ npm install highseat
 | `highseat/proxy` | `createProxy()`, a first-party proxy for any runtime with `fetch` | Nothing |
 | `highseat/server` | `track()`, `flush()`, `close()` and `createTracker()`, for events sent from your backend | Nothing |
 | `highseat/mcp` | `trackToolCalls()` and `mcpLink()`, for the tool calls AI assistants make to your MCP server | The MCP TypeScript SDK v2 |
+| `highseat/api` | `createApi()`, a typed client of the Highseat API, for reading stats and changing a site from your own code | Nothing |
 
 Each entry point loads on its own and imports no framework it does not name, so `highseat/proxy` and `highseat/server` run in a Cloudflare Worker without React installed.
 
@@ -411,6 +412,43 @@ Each call sends one `mcp_tool_call` event with these properties:
 It never sends the tool's arguments, its result, the caller's IP or its user agent, and it never reads ChatGPT's user or conversation ids. Assistant directories forbid collecting conversation data, and every call comes from the assistant's servers rather than from a person, so a tool call counts as an event, never as a visitor. Highseat accepts `mcp_tool_call` only from a server holding the site secret.
 
 `mcpLink(url, context)` tags a link a tool returns with `utm_source` set to the client and `utm_medium=mcp`, so a visit it brings reads as that assistant in the AI channel. A link that already names a `utm_source` is returned as it is. Pass `waitUntil` to `trackToolCalls()` in a serverless function, and `tracker` to send with a tracker from `createTracker()`.
+
+## API client
+
+`highseat/api` calls the [Highseat API](https://highseat.com/docs/api) with an API key or an OAuth access token. Every operation is a method named after its operation id, and its parameters and answer are typed from the API's OpenAPI document:
+
+```ts
+import { createApi } from "highseat/api"
+
+const api = createApi({ token: process.env.HIGHSEAT_API_KEY })
+
+const { data } = await api.getOverview({ site: "example.com", period: "30d" })
+console.log(data.visitors)
+
+await api.createNote({ site: "example.com", body: { date: "2026-11-09", text: "Launch" } })
+```
+
+A method takes the path and query parameters in one object. A write takes its JSON under `body`. Pass `signal` to cancel a call. Pass a function as `token` when the token changes, as an OAuth access token does: it runs before every call.
+
+A list answers one page at a time. `api.paginate` walks every page for you, reading the next one only when the loop asks for it:
+
+```ts
+for await (const row of api.paginate.getPages({ site: "example.com", period: "30d" })) {
+  console.log(row.path, row.visitors)
+}
+
+const notes = await api.paginate.listNotes({ site: "example.com" }).toArray()
+```
+
+To call a path rather than an operation, use `api.get()`, `api.post()`, `api.patch()` or `api.delete()`: `api.get("/sites/{site}/realtime", { path: { site: "example.com" } })`. `ApiResult<"/sites/{site}/overview">` names what a path answers.
+
+A refused call throws `HighseatApiError`. Branch on its `code`, and quote its `requestId` to support. On a conflict, `id` names the existing row, and `issues` lists each invalid parameter.
+
+| Behaviour | |
+| --- | --- |
+| Rate limits | A `429` whose `Retry-After` is 5 seconds or less is retried once, after that wait, and so is `TOO_MANY_CONCURRENT_REQUESTS`. A longer wait throws. |
+| Writes | A `POST` without an `idempotencyKey` gets a generated one, so its retry writes once. Pass your own to make a retry of the whole call safe too. |
+| Runtimes | It uses the global `fetch`, so it runs in Node.js, Bun and Cloudflare Workers. Pass `fetch` to replace it, and `baseUrl` to call another address. |
 
 ## First-party proxy
 

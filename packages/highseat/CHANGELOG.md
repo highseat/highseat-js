@@ -1,5 +1,11 @@
 # highseat
 
+## 0.10.0
+
+### Minor Changes
+
+- `highseat/api` calls each operation by name: `api.getOverview({ site, period })` and `api.createNote({ site, body })`, typed from the API's OpenAPI document. `api.paginate.getPages({ site })` walks every cursor page as an async iterator, and `.toArray()` collects them. A `429` with a `Retry-After` of 5 seconds or less is retried once, and so is `TOO_MANY_CONCURRENT_REQUESTS`. A `POST` without an `idempotencyKey` gets a generated one, so its retry writes once. An operation with an optional body, such as `PATCH /sites/{site}/notes/{id}`, now accepts it.
+
 ## 0.9.0
 
 ### Minor Changes

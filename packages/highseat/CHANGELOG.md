@@ -1,5 +1,11 @@
 # highseat
 
+## 0.11.0
+
+### Minor Changes
+
+- File downloads are opt-in. `inject()` and `<Highseat />` record `file_download` only with `downloads: true`, because each download counts toward the plan's events. `downloads: false` is no longer needed and changes nothing. Outbound link clicks stay on by default.
+
 ## 0.10.0
 
 ### Minor Changes

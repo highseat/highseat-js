@@ -323,10 +323,19 @@ describe("inject", () => {
     const scripts: FakeScript[] = []
     host.document = createDocument(scripts)
 
-    inject({ site: "site_1", src: "/3f9a0c1e2b", outbound: false, hashRouting: true })
+    inject({
+      site: "site_1",
+      src: "/3f9a0c1e2b",
+      outbound: false,
+      downloads: true,
+      hashRouting: true,
+    })
 
     expect(scripts.map(({ src, dataset }) => ({ src, dataset }))).toEqual([
-      { src: "/3f9a0c1e2b", dataset: { site: "site_1", outbound: "false", hashRouting: "" } },
+      {
+        src: "/3f9a0c1e2b",
+        dataset: { site: "site_1", outbound: "false", downloads: "", hashRouting: "" },
+      },
     ])
   })
 

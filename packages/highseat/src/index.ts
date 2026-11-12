@@ -47,7 +47,7 @@ export interface BuiltInEvents {
   subscription_started: Properties
   /** A free trial began. */
   trial_started: Properties
-  /** A file download. The tracker records links to files on its own. */
+  /** A file download. The tracker records links to files on its own with `downloads` on. */
   file_download: { url: string }
   /** A click on a link to another site. The tracker records these on its own. */
   outbound_link_click: { url: string }
@@ -198,7 +198,10 @@ export interface InjectOptions {
   src?: string
   /** Records clicks on links to other sites as `outbound_link_click`. Defaults to `true`. */
   outbound?: boolean
-  /** Records clicks on links to files as `file_download`. Defaults to `true`. */
+  /**
+   * Records clicks on links to files (`.pdf`, `.zip` and other common types) as
+   * `file_download`. Defaults to `false`. Each download counts toward the plan's events.
+   */
   downloads?: boolean
   /** Counts a change of `#/route` as a page view, for an app that routes by hash. */
   hashRouting?: boolean
@@ -453,7 +456,7 @@ export function inject(options: InjectOptions): void {
   script.src = src
   script.dataset.site = site
   if (outbound === false) script.dataset.outbound = "false"
-  if (downloads === false) script.dataset.downloads = "false"
+  if (downloads) script.dataset.downloads = ""
   if (hashRouting) script.dataset.hashRouting = ""
   document.head.append(script)
 }

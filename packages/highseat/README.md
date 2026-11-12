@@ -63,7 +63,7 @@ import { Highseat } from "highseat/react"
 <Highseat site="site_…" />
 ```
 
-With Vite, `site={import.meta.env.VITE_HIGHSEAT_SITE}` reads the site id from the environment instead; with another bundler, read it from that bundler's public variable. `src` takes the site's proxy path (`/3f9a0c1e2b`) for first-party delivery. `outbound={false}` and `downloads={false}` turn off the automatic link and download events, and `hashRouting` counts `#/route` changes as page views.
+With Vite, `site={import.meta.env.VITE_HIGHSEAT_SITE}` reads the site id from the environment instead; with another bundler, read it from that bundler's public variable. `src` takes the site's proxy path (`/3f9a0c1e2b`) for first-party delivery. `outbound={false}` turns off the automatic outbound link event, `downloads` turns on the file download event, and `hashRouting` counts `#/route` changes as page views.
 
 Without React, `inject({ site })` from `highseat` adds the same script tag.
 

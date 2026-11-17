@@ -1,6 +1,6 @@
 # `highseat`: agent guidelines
 
-The one public npm package. Everything else in this monorepo is private and unversioned. Customers install it, so its names, subpaths and option shapes are a contract: a rename is a breaking release, not a refactor.
+One of the two public npm packages, beside `@underpin/ui` (`packages/ui`). Everything else in this monorepo is private and unversioned. Customers install it, so its names, subpaths and option shapes are a contract: a rename is a breaking release, not a refactor.
 
 ## Shape
 
@@ -35,7 +35,7 @@ Rules:
 
 - **Never publish from here.** No `npm publish`, no `NPM_TOKEN`, in any workflow or by hand. A version published outside the mirror has no provenance, and the mirror's next run skips it as already published.
 - **Never edit the mirror.** Every sync replaces its `packages` directory, and its root files come from `.github/mirror/` here. Change them here, including the mirror's `release.yml`. The mirror keeps its own `bun.lock`, which the sync refreshes and the release installs from with `--frozen-lockfile`.
-- **Kodeks is pinned exactly.** `version.yml`, `sync-public.yml` and the mirror's `release.yml` call its workflows at the SHA of a kodeks release, and the root, `.github/mirror/package.json` and this package take its exact version, never a range. The sync receives the deploy key and the release can publish, and the mirror's `bun.lock` is written by the sync, not reviewed in a PR, so a range would let an unreviewed kodeks run with the publish credential. Bump all six together.
+- **Kodeks is pinned exactly.** `version.yml`, `sync-public.yml` and the mirror's `release.yml` call its workflows at the SHA of a kodeks release, and the root, `.github/mirror/package.json` and this package take its exact version, never a range. The sync receives the deploy key and the release can publish, and the mirror's `bun.lock` is written by the sync, not reviewed in a PR, so a range would let an unreviewed kodeks run with the publish credential. Bump all six together, and with them the pins of the `underpinhq/underpin` mirror: `.github/mirror-underpin/package.json`, its `release.yml` and `packages/ui/package.json`.
 - **The mirror's `release.yml` keeps its name.** npm trusts that file by name (package `highseat`, Settings, Trusted publishing: owner `highseat`, repository `highseat-js`, workflow `release.yml`). Renaming it breaks publishing until the trusted publisher is updated on npmjs.com.
 - **Prereleases**: every bump is a stable version under `latest`. To ship prereleases first, run `bunx changeset pre enter alpha` in a PR: the committed `.changeset/pre.json` makes every bump `x.y.z-alpha.N` under `alpha`, and `latest` stays on the last stable version. `bunx changeset pre exit` in a PR returns to stable versions. In pre mode the Version Packages PR moves each consumed changeset into `.changeset/pre/`, and the exit release writes its changelog from them, so review that folder before exiting.
 - **Preview builds**: the `package` workflow attaches the packed tarball to every run on a PR that touches the package, with the install line in the run's summary.

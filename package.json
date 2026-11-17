@@ -9,7 +9,7 @@
     "build": "bun run --filter highseat build"
   },
   "devDependencies": {
-    "@dirstack/kodeks": "1.11.0"
+    "@underpin/config": "1.12.0"
   },
   "packageManager": "bun@1.4.4"
 }

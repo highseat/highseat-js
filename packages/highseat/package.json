@@ -70,7 +70,7 @@
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "^1.6.0",
-    "@dirstack/kodeks": "1.9.2",
+    "@dirstack/kodeks": "1.11.0",
     "@modelcontextprotocol/server": "2.3.1",
     "@types/node": "^24.0.0",
     "@types/react": "^19.3.0",

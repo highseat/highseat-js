@@ -70,11 +70,11 @@
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "^1.6.0",
-    "@underpin/config": "1.12.0",
     "@modelcontextprotocol/server": "2.3.1",
     "@types/node": "^24.0.0",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "@underpin/config": "1.12.1",
     "happy-dom": "^21.0.4",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",

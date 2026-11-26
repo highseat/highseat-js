@@ -17,7 +17,8 @@ export type ClientIp = ClientIpPreset | ((request: Request) => string | null | u
 /** The ingest origin both handlers send to unless told otherwise. */
 export const DEFAULT_UPSTREAM = "https://cdn.highseat.com"
 
-const SECRET_PREFIX = "hs_secret_"
+/** What every site secret starts with. */
+export const SECRET_PREFIX = "hs_secret_"
 
 const CLIENT_IP_HEADERS: Record<ClientIpPreset, string> = {
   vercel: "x-real-ip",
@@ -33,13 +34,23 @@ interface ClientIpReader {
   source: string
 }
 
+/** Whether a value has the shape of a site secret, so it is not another value copied by mistake. */
+export function isSiteSecret(value: string): boolean {
+  return value.startsWith(SECRET_PREFIX)
+}
+
+/** Whether a `clientIp` is a function or a preset this package knows. */
+export function isClientIp(clientIp: ClientIp): boolean {
+  return typeof clientIp === "function" || Object.hasOwn(CLIENT_IP_HEADERS, clientIp)
+}
+
 /**
  * The site secret, `option` or else `HIGHSEAT_SECRET`, or `undefined` when neither is set. Throws
  * on a value that is not one, naming the entry point that read it: that is a copying mistake.
  */
 export function findValidSecret(option: string | undefined, entry: string): string | undefined {
   const secret = option ?? findSecret()
-  if (!secret || secret.startsWith(SECRET_PREFIX)) return secret
+  if (!secret || isSiteSecret(secret)) return secret
 
   throw new Error(
     `${entry}: not a site secret. Copy it from the site's Installation settings; it starts with "${SECRET_PREFIX}".`,

@@ -1,13 +1,21 @@
-import { findHostPlatform, findServerSite, isNextBuild } from "./env"
+import { findHostPlatform, findSecret, findServerSite, isNextBuild } from "./env"
 import type { BuiltInEvents, PropertyValue, Revenue, TrackArgsOf, TrackNameOf } from "./index"
-import { type ClientIp, DEFAULT_UPSTREAM, findValidSecret, getClientIpReader } from "./ingest"
+import {
+  type ClientIp,
+  DEFAULT_UPSTREAM,
+  getClientIpReader,
+  isClientIp,
+  isSiteSecret,
+  SECRET_PREFIX,
+} from "./ingest"
 
 export type { ClientIp, ClientIpPreset } from "./ingest"
 
 /**
  * Server-side events, sent from your own backend with the site secret: a server action, a route
  * handler, a webhook handler or a job. Events are batched and sent in the background, retried
- * when Highseat is busy or unreachable, and nothing here throws: a failure goes to `onError`.
+ * when Highseat is busy or unreachable, and nothing here throws: a failure goes to `onError`,
+ * and so do options that cannot be right, which turn the tracker off.
  */
 
 /**
@@ -74,14 +82,16 @@ export interface TrackErrorEvent {
   reason?: string
 }
 
-/** A failure `track()` never throws, handed to `onError`. */
+/** A failure `track()` and `createTracker()` never throw, handed to `onError`. */
 export interface TrackError {
   /**
    * `rejected`: refused as invalid, for good. `dropped`: accepted but not stored, for a `reason`
    * of `foreign_hostname`, `bot` or `excluded` (a recognised retry is never reported). `failed`:
    * never landed, after every retry or at `close()`'s deadline, or refused whole (a wrong secret).
+   * `invalid`: the tracker's options cannot be right, such as a secret without its `hs_secret_`
+   * prefix, so it sends nothing. It is reported once, by `createTracker()`, with no events.
    */
-  type: "rejected" | "dropped" | "failed"
+  type: "rejected" | "dropped" | "failed" | "invalid"
   /** What happened, in a sentence. */
   message: string
   /** The HTTP status Highseat answered, when it answered. */
@@ -90,7 +100,47 @@ export interface TrackError {
   events: TrackErrorEvent[]
 }
 
+/** An event as the tracker would send it, handed to the `dryRun` logger. */
+export interface DryRunEvent {
+  /** The event's name. */
+  name: string
+  /** The event's id: the one passed to `track()`, or the UUID it was given. */
+  eventId: string
+  /** The properties as Highseat stores them: every value a string, cut to 500 characters. */
+  properties: Record<string, string>
+  /** The revenue, when the event carries some. */
+  revenue?: Revenue
+  /** The user id, as a string. */
+  userId?: string
+  /** The hostname the event is filed under. */
+  hostname?: string
+  /** The visitor's IP. */
+  ip?: string
+  /** The visitor's user agent. */
+  userAgent?: string
+  /** The page's URL. */
+  url?: string
+  /** The page the visitor came from. */
+  referrer?: string
+  /** When the event happened. */
+  timestamp: Date
+}
+
 export interface TrackerOptions {
+  /**
+   * `false` turns the tracker off: every `track()` does nothing, and neither the options'
+   * credentials nor the environment are read. Pass it where tracking must stay off, such as
+   * outside production. Defaults to `true`.
+   */
+  enabled?: boolean
+  /**
+   * Logs each event instead of sending it. `true` logs through `console.info`, and a function
+   * receives each event, to log through your own logger. A dry run sends nothing and needs no
+   * credentials, even with `enabled: false`, so it also shows what a development server would
+   * track. It never reads the environment, and options that cannot be right turn it off as they
+   * would a real tracker.
+   */
+  dryRun?: boolean | ((event: DryRunEvent) => void)
   /** The site id, `site_…`. Defaults to `HIGHSEAT_SITE`, then `NEXT_PUBLIC_HIGHSEAT_SITE`. */
   site?: string
   /**
@@ -110,7 +160,10 @@ export interface TrackerOptions {
   upstream?: string
   /** The `fetch` events are sent with. Defaults to the global one. */
   fetch?: typeof fetch
-  /** Receives every failure. Defaults to a `console.warn`. */
+  /**
+   * Receives every failure, and options that cannot be right as one `invalid` error. Defaults to
+   * a `console.warn`.
+   */
   onError?: (error: TrackError) => void
   /**
    * Sends every event at once and keeps the function alive until it lands. Pass it in a
@@ -336,12 +389,77 @@ function toWireProperties(properties: Record<string, PropertyValue | Revenue> | 
 }
 
 function warnOnError(error: TrackError) {
-  console.warn(`${ENTRY}: ${error.message}`, error.events)
+  const message = `${ENTRY}: ${error.message}`
+  if (error.events.length) {
+    console.warn(message, error.events)
+  } else {
+    console.warn(message)
+  }
+}
+
+/** Hands a failure to `onError`, whose own failure is ignored so tracking never throws. */
+function reportTo(onError: (error: TrackError) => void, error: TrackError) {
+  try {
+    onError(error)
+  } catch {}
 }
 
 /** Whether a request ran inside a Cloudflare Worker, which gives every request a `cf` object. */
 function isWorkerRequest(request: Request) {
   return "cf" in request && !!(request as { cf?: unknown }).cf
+}
+
+// A site id is `site_` and 21 characters, or an older site's cuid or UUID. A value with a dot,
+// a slash or a space is a domain or a URL, and one starting with `hs_` is a secret or an API key.
+const SITE_ID = /^(?!hs_)[\w-]+$/
+
+/**
+ * Why the options cannot be right, empty when they can. Each one is a copying mistake that no
+ * retry fixes, so the tracker turns off rather than sending events Highseat refuses.
+ */
+function listSetupProblems(options: TrackerOptions, site?: string, secret?: string) {
+  const problems: string[] = []
+  if (site && !SITE_ID.test(site)) {
+    problems.push(
+      "The site is not a site id. Copy it from the site's Installation settings, as site_….",
+    )
+  }
+  if (secret && !isSiteSecret(secret)) {
+    problems.push(
+      `The secret is not a site secret. Copy it from the site's Installation settings; it starts with "${SECRET_PREFIX}".`,
+    )
+  }
+  if (options.clientIp !== undefined && !isClientIp(options.clientIp)) {
+    problems.push(`clientIp "${String(options.clientIp)}" is not a preset.`)
+  }
+  if (options.upstream !== undefined && !URL.canParse(options.upstream)) {
+    problems.push("upstream is not a URL.")
+  }
+  return problems
+}
+
+/** Reports what is wrong with the options once, as an `invalid` error, and whether anything is. */
+function reportSetupProblems(
+  onError: (error: TrackError) => void,
+  options: TrackerOptions,
+  site?: string,
+  secret?: string,
+) {
+  const problems = listSetupProblems(options, site, secret)
+  if (!problems.length) return false
+
+  reportTo(onError, {
+    type: "invalid",
+    message: `${problems.join(" ")} Events are not sent.`,
+    events: [],
+  })
+  return true
+}
+
+const IDLE_TRACKER: Tracker = {
+  track: () => {},
+  flush: async () => {},
+  close: async () => {},
 }
 
 // A missing variable is reported once per process, as `createProxy()` does.
@@ -352,63 +470,12 @@ function createDisabledTracker(missing: string[]): Tracker {
     hasWarnedMissing = true
     console.warn(`${ENTRY}: ${missing.join(" and ")} not set, so events are not sent.`)
   }
-
-  return {
-    track: () => {},
-    flush: async () => {},
-    close: async () => {},
-  }
+  return IDLE_TRACKER
 }
 
-/**
- * Creates a tracker for a site's backend. Credentials come from the options or from
- * `HIGHSEAT_SITE` and `HIGHSEAT_SECRET`. Without them the tracker warns once and sends nothing,
- * and a value that is not a site secret throws, since that is a copying mistake.
- *
- * ```ts
- * const tracker = createTracker({ hostname: "example.com" })
- * tracker.track("signup", { plan: "pro" }, { request, userId: user.id })
- * ```
- */
-export function createTracker(options: TrackerOptions = {}): Tracker {
-  const site = options.site ?? findServerSite()
-  const secret = findValidSecret(options.secret, ENTRY)
-  const missing = [...(site ? [] : ["HIGHSEAT_SITE"]), ...(secret ? [] : ["HIGHSEAT_SECRET"])]
-  if (!site || !secret) return createDisabledTracker(missing)
-
-  const headers = { "content-type": "application/json", "x-site-id": site, "x-hs-secret": secret }
-
-  const endpoint = `${new URL(options.upstream ?? DEFAULT_UPSTREAM).origin}/api/event`
-  const send =
-    options.fetch ?? ((input: RequestInfo | URL, init?: RequestInit) => fetch(input, init))
-  const onError = options.onError ?? warnOnError
-  const flushInterval = options.flushInterval ?? DEFAULT_FLUSH_INTERVAL_MS
-  const maxRetries = options.maxRetries ?? DEFAULT_MAX_RETRIES
-  const timeout = options.timeout ?? DEFAULT_TIMEOUT_MS
-
-  // The events waiting for the sender and the batch it holds, which both count toward the cap.
-  let queue: QueuedEvent[] = []
-  let sending: QueuedEvent[] = []
-  let timer: ReturnType<typeof setTimeout> | undefined
-  // The one sender loop, while it runs. Batches go one at a time, so a 429's `Retry-After`
-  // pauses the whole tracker rather than one batch among many retrying at once.
-  let sender: Promise<void> | undefined
-  let closed = false
-  // Set when `close()` reaches its deadline: the sender stops, and what is left is reported.
-  let stopped = false
-  const stopping = new AbortController()
-  let endPause: (() => void) | undefined
+/** Turns `track()`'s arguments into an event as ingest takes it. */
+function createEventBuilder(options: TrackerOptions) {
   let hasWarnedNoClientIp = false
-
-  function report(error: TrackError) {
-    try {
-      onError(error)
-    } catch {}
-  }
-
-  function listEvents(batch: QueuedEvent[]): TrackErrorEvent[] {
-    return batch.map(({ event }) => ({ name: event.event_name, eventId: event.event_id }))
-  }
 
   function readClientIp(request: Request): string | undefined {
     const clientIp =
@@ -427,11 +494,15 @@ export function createTracker(options: TrackerOptions = {}): Tracker {
     return getClientIpReader(clientIp, ENTRY).read(request) || undefined
   }
 
-  function buildEvent(name: string, properties: unknown, eventOptions: ServerEventOptions) {
+  return function buildEvent(
+    name: string,
+    properties: unknown,
+    eventOptions: ServerEventOptions,
+  ): WireEvent {
     const request = findRequest(eventOptions)
     const isPageview = name === "pageview"
     const userId = eventOptions.userId === undefined ? "" : String(eventOptions.userId)
-    const event: WireEvent = {
+    return {
       event_name: name,
       event_id: eventOptions.eventId ?? crypto.randomUUID(),
       hostname: eventOptions.hostname ?? options.hostname ?? (request && findRequestHost(request)),
@@ -444,7 +515,125 @@ export function createTracker(options: TrackerOptions = {}): Tracker {
         (isPageview ? (request?.headers.get("referer") ?? undefined) : undefined),
       ...toWireProperties(properties as Record<string, PropertyValue | Revenue> | undefined),
     }
-    return event
+  }
+}
+
+function logDryRun(event: DryRunEvent) {
+  console.info(`${ENTRY}: dry run, not sent: ${JSON.stringify(event.name)}`, event)
+}
+
+/** The event under the names `track()` takes, with every unset field left out. */
+function toDryRunEvent(event: WireEvent, timestamp: Date): DryRunEvent {
+  const optional = {
+    revenue: event.revenue,
+    userId: event.user_id,
+    hostname: event.hostname,
+    ip: event.ip,
+    userAgent: event.user_agent,
+    url: event.page_url,
+    referrer: event.referrer,
+  }
+  return {
+    name: event.event_name,
+    eventId: event.event_id,
+    properties: event.properties ?? {},
+    ...Object.fromEntries(Object.entries(optional).filter(([, value]) => value !== undefined)),
+    timestamp,
+  }
+}
+
+/** A tracker that hands each event to `log` and sends nothing. */
+function createDryRunTracker(
+  options: TrackerOptions,
+  log: (event: DryRunEvent) => void,
+  onError: (error: TrackError) => void,
+): Tracker {
+  const buildEvent = createEventBuilder(options)
+  let closed = false
+
+  function track(name: string, ...args: unknown[]) {
+    if (closed) return
+    try {
+      const [properties, eventOptions = {}] = args as [unknown, ServerEventOptions | undefined]
+      const timestamp = eventOptions.timestamp ?? new Date()
+      log(toDryRunEvent(buildEvent(name, properties, eventOptions), timestamp))
+    } catch (error) {
+      reportTo(onError, {
+        type: "failed",
+        message: error instanceof Error ? error.message : String(error),
+        events: [],
+      })
+    }
+  }
+
+  return {
+    track,
+    flush: async () => {},
+    close: async () => {
+      closed = true
+    },
+  }
+}
+
+/**
+ * Creates a tracker for a site's backend. Credentials come from the options or from
+ * `HIGHSEAT_SITE` and `HIGHSEAT_SECRET`. It never throws, so a bad setting cannot stop a server
+ * from starting: without credentials the tracker warns once and sends nothing, and options that
+ * cannot be right, such as a secret without its prefix, go to `onError` once and turn it off.
+ * `enabled: false` turns it off on purpose, and `dryRun` logs each event instead of sending it.
+ *
+ * ```ts
+ * const tracker = createTracker({ hostname: "example.com" })
+ * tracker.track("signup", { plan: "pro" }, { request, userId: user.id })
+ * ```
+ */
+export function createTracker(options: TrackerOptions = {}): Tracker {
+  const onError = options.onError ?? warnOnError
+
+  // A dry run checks the options it is given, as production would, but never the environment.
+  if (options.dryRun) {
+    if (reportSetupProblems(onError, options, options.site, options.secret)) return IDLE_TRACKER
+    const log = options.dryRun === true ? logDryRun : options.dryRun
+    return createDryRunTracker(options, log, onError)
+  }
+  if (options.enabled === false) return IDLE_TRACKER
+
+  const site = options.site ?? findServerSite()
+  const secret = options.secret ?? findSecret()
+  if (reportSetupProblems(onError, options, site, secret)) return IDLE_TRACKER
+
+  const missing = [...(site ? [] : ["HIGHSEAT_SITE"]), ...(secret ? [] : ["HIGHSEAT_SECRET"])]
+  if (!site || !secret) return createDisabledTracker(missing)
+
+  const headers = { "content-type": "application/json", "x-site-id": site, "x-hs-secret": secret }
+
+  const endpoint = `${new URL(options.upstream ?? DEFAULT_UPSTREAM).origin}/api/event`
+  const send =
+    options.fetch ?? ((input: RequestInfo | URL, init?: RequestInit) => fetch(input, init))
+  const buildEvent = createEventBuilder(options)
+  const flushInterval = options.flushInterval ?? DEFAULT_FLUSH_INTERVAL_MS
+  const maxRetries = options.maxRetries ?? DEFAULT_MAX_RETRIES
+  const timeout = options.timeout ?? DEFAULT_TIMEOUT_MS
+
+  // The events waiting for the sender and the batch it holds, which both count toward the cap.
+  let queue: QueuedEvent[] = []
+  let sending: QueuedEvent[] = []
+  let timer: ReturnType<typeof setTimeout> | undefined
+  // The one sender loop, while it runs. Batches go one at a time, so a 429's `Retry-After`
+  // pauses the whole tracker rather than one batch among many retrying at once.
+  let sender: Promise<void> | undefined
+  let closed = false
+  // Set when `close()` reaches its deadline: the sender stops, and what is left is reported.
+  let stopped = false
+  const stopping = new AbortController()
+  let endPause: (() => void) | undefined
+
+  function report(error: TrackError) {
+    reportTo(onError, error)
+  }
+
+  function listEvents(batch: QueuedEvent[]): TrackErrorEvent[] {
+    return batch.map(({ event }) => ({ name: event.event_name, eventId: event.event_id }))
   }
 
   function toErrorEvents(batch: QueuedEvent[], entries: BatchEntry[]): TrackErrorEvent[] {
@@ -667,13 +856,7 @@ export function createTracker(options: TrackerOptions = {}): Tracker {
 let defaultTracker: Tracker | undefined
 
 function getDefaultTracker(): Tracker {
-  if (defaultTracker) return defaultTracker
-  try {
-    defaultTracker = createTracker()
-  } catch (error) {
-    console.warn(error instanceof Error ? error.message : error)
-    defaultTracker = createDisabledTracker([])
-  }
+  defaultTracker ??= createTracker()
   return defaultTracker
 }
 

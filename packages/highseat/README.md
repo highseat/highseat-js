@@ -354,11 +354,13 @@ tracker.track("tier_created", { tier: "gold" }, { userId: publisher.id, ip, user
 | Option | Default | |
 | --- | --- | --- |
 | `site` | `HIGHSEAT_SITE`, then `NEXT_PUBLIC_HIGHSEAT_SITE` | The site id. |
-| `secret` | `HIGHSEAT_SECRET` | The site secret. A value that is not one throws. Without the site or the secret, the tracker warns once and sends nothing. |
+| `secret` | `HIGHSEAT_SECRET` | The site secret. Without the site or the secret, the tracker warns once and sends nothing. |
+| `enabled` | `true` | `false` turns the tracker off without reading the environment. |
+| `dryRun` | `false` | Logs each event instead of sending it: `true` through `console.info`, or a function of your own. |
 | `hostname` | The request's host | The hostname events are filed under. An event's own `hostname` wins. |
 | `clientIp` | `"cloudflare"` in a Worker, `"vercel"` on Vercel, `"netlify"` on Netlify | Where the visitor's IP is read from a request, as for `createProxy()`. Those three hosts overwrite their header, so a visitor cannot forge it. Anywhere else, set it or pass `ip` with each event: without either, an event carries no IP and no country. |
 | `waitUntil` | None | Sends every event at once, as above. |
-| `onError` | `console.warn` | Receives each failure. `type` is `"rejected"` for events Highseat refused as invalid, `"dropped"` for events it accepted but did not store (a hostname that is not the site's, a bot, excluded traffic), each with its `reason`, or `"failed"` for events that never landed, were refused whole (a wrong secret), or were left at `close()`'s deadline. A retry Highseat recognised as already stored is not a failure. |
+| `onError` | `console.warn` | Receives each failure. `type` is `"invalid"` once, for options that cannot be right, `"rejected"` for events Highseat refused as invalid, `"dropped"` for events it accepted but did not store (a hostname that is not the site's, a bot, excluded traffic), each with its `reason`, or `"failed"` for events that never landed, were refused whole (a wrong secret), or were left at `close()`'s deadline. A retry Highseat recognised as already stored is not a failure. |
 | `fetch` | The global `fetch` | The `fetch` events are sent with, such as a mock in tests. |
 | `upstream` | `https://cdn.highseat.com` | The Highseat ingest origin. |
 | `flushInterval` | `1000` | Milliseconds an event waits for others to share its request. |
@@ -366,6 +368,21 @@ tracker.track("tier_created", { tier: "gold" }, { userId: publisher.id, ip, user
 | `timeout` | `10000` | Milliseconds one request may take. |
 
 Each event takes `request` or `headers`, then `ip`, `userAgent`, `userId`, `hostname`, `url`, `referrer`, `eventId`, `timestamp` and `waitUntil`. An explicit `ip` or `userAgent` wins over the request's. A `pageview` takes its `url` and `referrer` from the request too.
+
+### Off, dry run and bad settings
+
+`createTracker()` never throws, so a bad setting cannot stop a server from starting. A site id or secret that cannot be right, such as a secret without its `hs_secret_` prefix, turns the tracker off and reaches `onError` once as an `invalid` error. So does an unknown `clientIp` preset or an `upstream` that is not a URL.
+
+`enabled: false` turns the tracker off on purpose. It never reads `HIGHSEAT_SITE` or `HIGHSEAT_SECRET`, so an app with production credentials in its environment can still keep a staging server quiet. `dryRun` sends nothing and logs each event as it would be sent, its properties already turned into strings, and needs no credentials. It wins over `enabled: false`, and a setting you pass that cannot be right turns it off too:
+
+```ts
+const isProduction = process.env.NODE_ENV === "production"
+
+const tracker = createTracker({
+  enabled: isProduction,
+  dryRun: !isProduction && (event => logger.debug("highseat event", event)),
+})
+```
 
 ### Without the package
 

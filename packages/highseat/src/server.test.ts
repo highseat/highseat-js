@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { createTracker, flush, track } from "./server"
-import type { TrackError, TrackerOptions } from "./server"
+import type { DryRunEvent, TrackError, TrackerOptions } from "./server"
 
 interface Sent {
   url: string
@@ -374,8 +374,151 @@ describe("createTracker", () => {
     await expect(highseat.flush()).resolves.toBeUndefined()
   })
 
-  test("throws on a value that is not a site secret", () => {
-    expect(() => tracker({ secret: "site_1" })).toThrow(/not a site secret/)
+  test("turns off for a value that is not a site secret, and reports it once", async () => {
+    const highseat = tracker({ secret: "site_1" })
+    highseat.track("account_created")
+    highseat.track("login")
+    await highseat.flush()
+    await highseat.close()
+
+    expect(sent).toEqual([])
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toMatchObject({ type: "invalid", events: [] })
+    expect(errors[0]?.message).toMatch(/not a site secret.*Events are not sent\.$/)
+    // The value may be a secret pasted in the wrong place, so the report never repeats it.
+    expect(errors[0]?.message).not.toContain("site_1")
+  })
+
+  test("turns off for a site, clientIp or upstream that cannot be right", async () => {
+    const setups: TrackerOptions[] = [
+      { site: "example.com" },
+      { site: "hs_secret_test" },
+      { clientIp: "heroku" as TrackerOptions["clientIp"] },
+      { upstream: "cdn.highseat.com" },
+    ]
+    for (const setup of setups) {
+      const highseat = tracker(setup)
+      highseat.track("account_created")
+      await highseat.flush()
+    }
+
+    expect(sent).toEqual([])
+    expect(errors.map(error => error.type)).toEqual(["invalid", "invalid", "invalid", "invalid"])
+    expect(errors.map(error => error.message)).toEqual([
+      expect.stringMatching(/not a site id/),
+      expect.stringMatching(/not a site id/),
+      expect.stringMatching(/clientIp "heroku" is not a preset/),
+      expect.stringMatching(/upstream is not a URL/),
+    ])
+  })
+
+  test("warns about a malformed secret from the environment without onError", async () => {
+    await withEnv({ HIGHSEAT_SITE: "site_env", HIGHSEAT_SECRET: "hs_live_env" }, async () => {
+      const highseat = createTracker({ fetch: fakeFetch })
+      highseat.track("account_created")
+      await highseat.flush()
+    })
+
+    expect(sent).toEqual([])
+    expect(warn).toHaveBeenCalledOnce()
+    expect(String(warn.mock.calls[0]?.[0])).toMatch(/^highseat\/server: .*not a site secret/)
+    // An options problem names no events, so the warning carries no empty list.
+    expect(warn.mock.calls[0]).toHaveLength(1)
+  })
+
+  test("enabled: false sends nothing and never reads the environment", async () => {
+    await withEnv({ HIGHSEAT_SITE: "site_env", HIGHSEAT_SECRET: "hs_secret_env" }, async () => {
+      const highseat = createTracker({
+        enabled: false,
+        fetch: fakeFetch,
+        onError: error => errors.push(error),
+      })
+      highseat.track("account_created", { plan: "pro" }, { userId: 1 })
+      await highseat.flush()
+      await highseat.close({ timeout: 10 })
+    })
+
+    expect(sent).toEqual([])
+    expect(errors).toEqual([])
+    expect(warn).not.toHaveBeenCalled()
+  })
+
+  test("a dry run logs each event as it would be sent, and sends nothing", async () => {
+    const logged: DryRunEvent[] = []
+    const timestamp = new Date(Date.now() - 1000)
+    const highseat = tracker({ dryRun: event => logged.push(event) })
+    highseat.track(
+      "purchase",
+      { plan: "pro", seats: 3, revenue: { amount: 4999, currency: "USD" } },
+      { userId: 42, eventId: "evt_1", timestamp },
+    )
+    highseat.track("login")
+    await highseat.flush()
+    await highseat.close()
+    highseat.track("after_close")
+
+    expect(sent).toEqual([])
+    expect(logged).toEqual([
+      {
+        name: "purchase",
+        eventId: "evt_1",
+        properties: { plan: "pro", seats: "3" },
+        revenue: { amount: 4999, currency: "USD" },
+        userId: "42",
+        hostname: "example.com",
+        timestamp,
+      },
+      {
+        name: "login",
+        eventId: expect.stringMatching(UUID),
+        properties: {},
+        hostname: "example.com",
+        timestamp: expect.any(Date),
+      },
+    ])
+  })
+
+  test("a dry run turns off for options that cannot be right, and reports them once", () => {
+    const logged: DryRunEvent[] = []
+    const highseat = tracker({
+      secret: "site_1",
+      clientIp: "heroku" as TrackerOptions["clientIp"],
+      dryRun: event => logged.push(event),
+    })
+    highseat.track("account_created")
+    highseat.track("login")
+
+    expect(logged).toEqual([])
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toMatchObject({ type: "invalid", events: [] })
+    expect(errors[0]?.message).toMatch(/not a site secret.*clientIp "heroku" is not a preset/)
+  })
+
+  test("a dry run never reads the environment's credentials", async () => {
+    const logged: DryRunEvent[] = []
+    await withEnv({ HIGHSEAT_SITE: "example.com", HIGHSEAT_SECRET: "hs_live_env" }, async () => {
+      const highseat = createTracker({
+        dryRun: event => logged.push(event),
+        onError: error => errors.push(error),
+      })
+      highseat.track("account_created")
+    })
+
+    expect(errors).toEqual([])
+    expect(logged).toHaveLength(1)
+  })
+
+  test("a dry run needs no credentials, and wins over enabled: false", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {})
+    const highseat = createTracker({ enabled: false, dryRun: true, fetch: fakeFetch })
+    highseat.track("account_created", { plan: "pro" })
+    await highseat.flush()
+
+    expect(sent).toEqual([])
+    expect(warn).not.toHaveBeenCalled()
+    expect(info).toHaveBeenCalledOnce()
+    expect(info.mock.calls[0]?.[0]).toBe('highseat/server: dry run, not sent: "account_created"')
+    expect(info.mock.calls[0]?.[1]).toMatchObject({ properties: { plan: "pro" } })
   })
 
   test("reads its credentials from the environment, and warns once without them", async () => {

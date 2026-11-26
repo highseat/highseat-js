@@ -155,6 +155,29 @@ describe("Highseat", () => {
     expect(findGlobal()?.beforeSend).toBe(dropAdmin)
   })
 
+  test("trims each URL to allowParams before a hook set with useBeforeSend", () => {
+    // Each render writes the list inline, so it is a new array with the same params every time.
+    function renderPage() {
+      render(
+        createElement(
+          "div",
+          null,
+          createElement(Highseat, { site: "site_1", allowParams: ["page"] }),
+          createElement(Redact, { beforeSend: dropAdmin }),
+        ),
+      )
+    }
+    renderPage()
+    renderPage()
+    const hook = findGlobal()?.beforeSend as BeforeSend | undefined
+
+    expect(hook?.({ name: "pageview", url: "https://app.test/links?search=jane&page=2" })).toEqual({
+      name: "pageview",
+      url: "https://app.test/links?page=2",
+    })
+    expect(hook?.({ name: "pageview", url: "https://app.test/admin/users?page=2" })).toBe(null)
+  })
+
   test("loads the tracker and identifies the user", () => {
     render(createElement(Highseat, { site: "site_1", userId: "user_1" }))
     render(createElement(Highseat, { site: "site_1", userId: "user_1" }))

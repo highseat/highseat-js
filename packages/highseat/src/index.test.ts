@@ -420,3 +420,111 @@ describe("setBeforeSend", () => {
     expect(() => setBeforeSend(dropAdmin)).not.toThrow()
   })
 })
+
+describe("allowParams", () => {
+  const ORIGIN = "https://app.test"
+
+  // The hook the tracker runs on every event, as `inject` left it on the page.
+  function findHook() {
+    return host.window?.highseat?.beforeSend as ((event: BeforeSendEvent) => unknown) | undefined
+  }
+
+  function load(options: Omit<Parameters<typeof inject>[0], "site">) {
+    host.window = {}
+    host.document = createDocument()
+    inject({ site: "site_1", ...options })
+  }
+
+  test("keeps only the named params in the URL and the referrer, and drops the hash", () => {
+    load({ allowParams: ["page"] })
+
+    expect(
+      findHook()?.({
+        name: "pageview",
+        url: `${ORIGIN}/links?search=jane%40acme.com&page=2#top`,
+        referrer: `${ORIGIN}/links?search=jane%40acme.com&page=1`,
+      }),
+    ).toEqual({
+      name: "pageview",
+      url: `${ORIGIN}/links?page=2`,
+      referrer: `${ORIGIN}/links?page=1`,
+    })
+  })
+
+  test("leaves the URL unchanged when left out", () => {
+    load({})
+    expect(findHook(), "no hook stands between the tracker and the URL").toBeUndefined()
+
+    load({ beforeSend: dropAdmin })
+    expect(findHook(), "the site's own hook is the only one").toBe(dropAdmin)
+  })
+
+  test("runs before the site's hook, which sees the trimmed URL", () => {
+    const seen: string[] = []
+    load({
+      allowParams: [],
+      beforeSend: event => {
+        seen.push(event.url)
+        return dropAdmin(event)
+      },
+    })
+
+    expect(findHook()?.({ name: "pageview", url: `${ORIGIN}/admin/users?email=a%40b.c` })).toBe(
+      null,
+    )
+    expect(seen).toEqual([`${ORIGIN}/admin/users`])
+  })
+
+  test("keeps filtering when the site's hook is set or cleared later", () => {
+    load({ allowParams: ["page"] })
+    const event = { name: "pageview", url: `${ORIGIN}/admin/users?page=2&q=jane` }
+
+    setBeforeSend(dropAdmin)
+    expect(findHook()?.(event), "the later hook runs behind the filter").toBe(null)
+
+    setBeforeSend(undefined)
+    expect(findHook()?.(event), "clearing the hook leaves the filter").toEqual({
+      ...event,
+      url: `${ORIGIN}/admin/users?page=2`,
+    })
+  })
+
+  test("keeps filtering after a later inject without allowParams", () => {
+    load({ allowParams: ["page"] })
+    inject({ site: "site_1" })
+
+    expect(findHook()?.({ name: "pageview", url: `${ORIGIN}/links?page=2&q=jane` })).toEqual({
+      name: "pageview",
+      url: `${ORIGIN}/links?page=2`,
+    })
+  })
+
+  test("keeps the campaign tags and click ids ingest reads", () => {
+    load({ allowParams: [] })
+    const url = `${ORIGIN}/?utm_source=x&utm_campaign=launch&ref=ph&gclid=g1&email=a%40b.c`
+
+    expect(findHook()?.({ name: "pageview", url })).toEqual({
+      name: "pageview",
+      url: `${ORIGIN}/?utm_source=x&utm_campaign=launch&ref=ph&gclid=g1`,
+    })
+  })
+
+  test("keeps the route in the hash under hash routing, and drops the query inside it", () => {
+    load({ allowParams: ["page"], hashRouting: true })
+
+    expect(
+      findHook()?.({ name: "pageview", url: `${ORIGIN}/app?page=2#/reset?token=abc` }),
+    ).toEqual({ name: "pageview", url: `${ORIGIN}/app?page=2#/reset` })
+  })
+
+  test("drops an event whose URL cannot be read, and a referrer that cannot be read", () => {
+    load({ allowParams: [] })
+
+    expect(findHook()?.({ name: "pageview", url: "not a url" })).toBe(null)
+    expect(findHook()?.({ name: "pageview", url: `${ORIGIN}/`, referrer: "not a url" })).toEqual({
+      name: "pageview",
+      url: `${ORIGIN}/`,
+      referrer: undefined,
+    })
+  })
+})

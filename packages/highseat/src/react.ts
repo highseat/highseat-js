@@ -10,6 +10,7 @@ import {
   type IframeHTMLAttributes,
   type ReactElement,
 } from "react"
+import { clearSiteHook } from "./before-send"
 import {
   EMBED_CREDIT_TEXT,
   EMBED_CREDIT_URL,
@@ -81,10 +82,8 @@ export function useBeforeSend(beforeSend: BeforeSend | undefined): void {
   useEffect(() => {
     if (!beforeSend) return
     setBeforeSend(beforeSend)
-    return () => {
-      // Another component may have set its own hook since.
-      if (window.highseat?.beforeSend === beforeSend) setBeforeSend(undefined)
-    }
+    // Another component may have set its own hook since.
+    return () => clearSiteHook(beforeSend)
   }, [beforeSend])
 }
 
@@ -110,15 +109,20 @@ export function Highseat({
   downloads,
   hashRouting,
   beforeSend,
+  allowParams,
   debug,
   userId,
 }: HighseatProps): null {
   // Declared first, so its effect sets the hook before the next one adds the script tag.
   useBeforeSend(beforeSend)
 
+  // Compared by content, since a list written inline is a new array on every render.
+  const allowed = allowParams && JSON.stringify(allowParams)
+
   useEffect(() => {
-    inject({ site, src, outbound, downloads, hashRouting, debug })
-  }, [site, src, outbound, downloads, hashRouting, debug])
+    const names = allowed === undefined ? undefined : (JSON.parse(allowed) as string[])
+    inject({ site, src, outbound, downloads, hashRouting, debug, allowParams: names })
+  }, [site, src, outbound, downloads, hashRouting, debug, allowed])
 
   useIdentify(userId)
 

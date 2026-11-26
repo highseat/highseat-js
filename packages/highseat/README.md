@@ -68,6 +68,36 @@ With Vite, `site={import.meta.env.VITE_HIGHSEAT_SITE}` reads the site id from th
 
 Without React, `inject({ site })` from `highseat` adds the same script tag.
 
+## Site id at runtime
+
+A build-time variable writes one site id into the bundle. An app that ships one build to many installs, such as a Docker image each customer runs, then reports every install to the same site. Read the id from the server instead, and load no tracker when the server has none. Any server route works; with Hono:
+
+```ts
+// The install's own site id, or null when the install is not tracked.
+app.get("/api/config", context => context.json({ highseatSite: process.env.HIGHSEAT_SITE ?? null }))
+```
+
+```tsx
+import { Highseat } from "highseat/react"
+import { useEffect, useState } from "react"
+
+export function Analytics() {
+  const [site, setSite] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetch("/api/config")
+      .then(response => response.json())
+      .then((config: { highseatSite: string | null }) => setSite(config.highseatSite))
+      .catch(() => setSite(null))
+  }, [])
+
+  // With no site id, no script loads and nothing is sent.
+  return site ? <Highseat site={site} /> : null
+}
+```
+
+Without React, call `inject({ site })` once the answer names a site.
+
 ## TanStack Start
 
 Render `<Highseat />` once, inside `<body>` in the root route's component:
@@ -212,7 +242,23 @@ Without React, call `identify()` from `highseat` after each sign-in and sign-out
 
 ## Redact or drop events
 
-A page URL can carry a secret: a password-reset token in the path, an email address in the query. A `beforeSend` hook runs in the browser on every event before the tracker sends it, page views from client-side navigation included. Return the event, changed or not, or `null` to drop it. The hook can change the URL, the referrer and the properties, and the page path follows the URL it returns. It cannot change the site or the user id.
+A page URL can carry a secret: a password-reset token in the path, an email address in the query. A search box that keeps its text in the URL sends whatever the visitor typed, and a `redirect` param carries the whole URL of the page before.
+
+### Keep only known query params
+
+`allowParams` names the query params an event may keep. Every other param is dropped from the URL and the referrer, and so is the hash:
+
+```tsx
+<Highseat site="site_…" allowParams={["page", "status"]} />
+```
+
+A page view of `/links?search=jane%40acme.com&page=2#top` then reaches Highseat as `/links?page=2`. The campaign tags and ad click ids Highseat reads (`utm_*`, `ref`, `source`, `gclid` and the like) always stay, so campaigns still count. With `hashRouting`, the route in the hash stays and the query inside it goes. A param added to the app later stays out until it is named here, which is why the option is a list of params to keep.
+
+`inject({ site, allowParams })` takes the same option. A `beforeSend` hook, below, runs after it and sees the trimmed URL. A site with only the script tag trims the URL in its own `beforeSend`.
+
+### Change or drop an event
+
+A `beforeSend` hook runs in the browser on every event before the tracker sends it, page views from client-side navigation included. Return the event, changed or not, or `null` to drop it. The hook can change the URL, the referrer and the properties, and the page path follows the URL it returns. It cannot change the site or the user id.
 
 ```ts
 import type { BeforeSendEvent } from "highseat"

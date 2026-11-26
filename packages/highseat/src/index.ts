@@ -1,3 +1,4 @@
+import { setAllowParams, setSiteHook } from "./before-send"
 import { isDevelopment } from "./env"
 
 /**
@@ -176,7 +177,11 @@ export interface HighseatGlobal {
   getAttributionId?: () => string | undefined
   /** Calls made before the tracker loaded, drained in order when it starts. */
   q?: [string, unknown[]][]
-  /** The site's {@link BeforeSend} hook, read on every event. */
+  /**
+   * The hook the tracker runs on every event: the site's {@link BeforeSend} hook, or, with
+   * `allowParams`, a filter that trims the URLs and then runs the site's hook. Assigning it
+   * replaces both, so set the site's hook with {@link setBeforeSend} instead.
+   */
   beforeSend?: BeforeSend
 }
 
@@ -207,6 +212,16 @@ export interface InjectOptions {
   hashRouting?: boolean
   /** Changes or drops each event before it leaves the browser. See {@link BeforeSend}. */
   beforeSend?: BeforeSend
+  /**
+   * The query params each event's URL and referrer may keep, such as `["page", "status"]`. The
+   * others are dropped, and so is the hash, before the {@link BeforeSend} hook sees the event,
+   * page views from client-side navigation included. The campaign tags and ad click ids ingest
+   * reads (`utm_*`, `ref`, `source`, `gclid` and the like) always stay, so campaigns still count.
+   * Under `hashRouting` the route in the hash stays and the query inside it goes. Left out, URLs
+   * go unchanged. A list, not a list of params to drop, so a param added later stays out until it
+   * is named here: a search box or a `redirect` param can carry an email address.
+   */
+  allowParams?: readonly string[]
   /**
    * Logs every `track()` and `identify()` call to the console, and warns once when no tracker
    * script is on the page or the script failed to load. Defaults to `true` when
@@ -428,25 +443,35 @@ export async function getAttributionId(
 /**
  * Sets the {@link BeforeSend} hook, or clears it with `undefined`. Works before the tracker has
  * loaded, which picks the hook up when it starts, and applies from the next event once it runs.
+ * With `allowParams`, the hook runs after the URLs are trimmed, and clearing it keeps the trim.
  * Does nothing on a server.
  */
 export function setBeforeSend(beforeSend: BeforeSend | undefined): void {
-  const api = findGlobal()
-  if (api) api.beforeSend = beforeSend
+  setSiteHook(beforeSend)
 }
 
 /**
  * Adds the tracker's script tag to the page, once. A second call for the same site, such as a
- * component mounting again, finds the tag and adds nothing, but its `debug` option still applies.
- * Does nothing on a server.
+ * component mounting again, finds the tag and adds nothing, but its `debug` and `allowParams`
+ * options still apply. Does nothing on a server.
  */
 export function inject(options: InjectOptions): void {
   if (typeof document === "undefined") return
 
-  const { site, src = SCRIPT_URL, outbound, downloads, hashRouting, beforeSend, debug } = options
+  const {
+    site,
+    src = SCRIPT_URL,
+    outbound,
+    downloads,
+    hashRouting,
+    beforeSend,
+    allowParams,
+    debug,
+  } = options
   debugOption = debug
-  // Set before the script tag is added, so the first page view already passes through it.
+  // Set before the script tag is added, so the first page view already passes through them.
   if (beforeSend) setBeforeSend(beforeSend)
+  if (allowParams) setAllowParams(allowParams, hashRouting === true)
   if (isDebug()) watchTracker()
   if (Array.from(document.scripts).some(script => script.dataset.site === site)) return
 

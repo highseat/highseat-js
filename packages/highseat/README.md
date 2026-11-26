@@ -19,6 +19,7 @@ npm install highseat
 | `highseat/server` | `track()`, `flush()`, `close()` and `createTracker()`, for events sent from your backend | Nothing |
 | `highseat/mcp` | `trackToolCalls()` and `mcpLink()`, for the tool calls AI assistants make to your MCP server | The MCP TypeScript SDK v2 |
 | `highseat/api` | `createApi()`, a typed client of the Highseat API, for reading stats and changing a site from your own code | Nothing |
+| `highseat/testing` | `createTestTracker()`, an in-memory tracker that records the events your tests send | Nothing |
 
 Each entry point loads on its own and imports no framework it does not name, so `highseat/proxy` and `highseat/server` run in a Cloudflare Worker without React installed.
 
@@ -387,6 +388,32 @@ const tracker = createTracker({
 ### Without the package
 
 Any language can send the same request. `POST https://cdn.highseat.com/api/event` with `x-site-id` and `x-hs-secret` headers and a JSON array of up to 25 events. Each event names `event_name`, `hostname` (or a `page_url`), and optionally `event_id`, `user_id`, `ip`, `user_agent`, `page_url`, `referrer`, `properties` (string values) and `revenue`. The answer lists each refused event in `rejections` and each event it did not store in `dropped`, by its index in the batch.
+
+## Testing
+
+`highseat/testing` gives a site's own tests a tracker that keeps every event in memory and sends nothing. Write the code under test to take a `Tracker`, pass it `createTestTracker()` in a test, and read back what it tracked:
+
+```ts
+import type { Tracker } from "highseat/server"
+import { createTestTracker } from "highseat/testing"
+import { expect, test } from "vitest"
+
+function upgrade(tracker: Tracker, userId: string) {
+  tracker.track("subscription_started", { plan: "pro" }, { userId })
+}
+
+test("tracks the upgrade", () => {
+  const tracker = createTestTracker()
+
+  upgrade(tracker, "user_1")
+
+  expect(tracker.getEvents("subscription_started")).toEqual([
+    { name: "subscription_started", properties: { plan: "pro" }, options: { userId: "user_1" } },
+  ])
+})
+```
+
+Each record holds the event's `name`, its `properties` as passed, before Highseat turns them into strings, and its `options`, an empty object when the call passed none. `events` lists every record, oldest first, `getEvents(name)` the records with one name, and `reset()` forgets them all between tests. The tracker is typed by `Register`, so in strict mode a misspelt name fails to compile in the test as it does in the code. As with the real tracker, a `track()` after `close()` records nothing, until `reset()`.
 
 ## MCP tool calls
 

@@ -10,6 +10,7 @@ const config: UserConfig = defineConfig({
     "src/server.ts",
     "src/mcp.ts",
     "src/api.ts",
+    "src/testing.ts",
   ],
   format: "esm",
   platform: "neutral",

@@ -4,7 +4,8 @@
   "include": [
     "src/index.strict.test-d.ts",
     "src/react.strict.test-d.tsx",
-    "src/server.strict.test-d.ts"
+    "src/server.strict.test-d.ts",
+    "src/testing.strict.test-d.ts"
   ],
   "exclude": [],
   "compilerOptions": {

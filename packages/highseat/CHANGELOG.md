@@ -1,5 +1,24 @@
 # highseat
 
+## 0.12.0
+
+### Minor Changes
+
+- `inject()` and `<Highseat />` take `allowParams`, the query params each event's URL and referrer may keep. The others are dropped, and so is the hash, before a `beforeSend` hook sees the event, page views from client-side navigation included. With `allowParams: ["page"]`, a page view of `/links?search=jane%40acme.com&page=2#top` is sent as `/links?page=2`. Campaign tags and ad click ids (`utm_*`, `ref`, `source`, `gclid` and the like) always stay. Without the option, URLs go out unchanged.
+- Add `highseat/testing`, an in-memory tracker for your own tests. `createTestTracker()` fits wherever a `Tracker` from `highseat/server` is expected, records each `track()` call with its name, its properties as passed and its options, and makes no request. Read them back with `events` or `getEvents(name)`, and clear them between tests with `reset()`. Tests no longer need to fake `fetch` or parse Highseat's request format to check an event. The tracker is typed by `Register`, so in strict mode a misspelt event name fails to compile in a test too.
+- `createTracker()` from `highseat/server` never throws, so a bad setting can no longer stop a server from starting. A site id or secret that cannot be right, such as a secret without its `hs_secret_` prefix, an unknown `clientIp` preset or an `upstream` that is not a URL, now turns the tracker off and reaches `onError` once as a `TrackError` of the new type `"invalid"`. It used to throw from `createTracker()`.
+
+  Two new options: `enabled: false` turns the tracker off without reading `HIGHSEAT_SITE` or `HIGHSEAT_SECRET`, and `dryRun` logs each event instead of sending it, through `console.info` or a function you pass. A dry run needs no credentials, which covers a development server.
+
+  ```ts
+  const isProduction = process.env.NODE_ENV === "production"
+
+  const tracker = createTracker({
+    enabled: isProduction,
+    dryRun: !isProduction && (event => logger.debug("highseat event", event)),
+  })
+  ```
+
 ## 0.11.0
 
 ### Minor Changes
